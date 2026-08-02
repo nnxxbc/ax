@@ -1,0 +1,1208 @@
+# Build a Physical Transition Assistant — Android-Ready Web App
+
+## PROJECT OVERVIEW
+
+Build a mobile-first application designed to help a user who struggles primarily with:
+
+* Executive dysfunction
+* Task initiation
+* Physical transitions between activities
+* Getting out of bed
+* Getting stuck in one location for long periods
+* Phone distraction
+* Freeze states
+* Overwhelm from large to-do lists
+* Burnout from trying to maintain overly ambitious routines
+
+This is NOT a generic habit tracker.
+
+The core concept is:
+
+> **Don't think about the whole day. Just move to the next station.**
+
+The user's home is turned into a sequence of physical checkpoints.
+
+The smartphone is the central controller and "breadcrumb."
+
+Each physical checkpoint has an NFC tag.
+
+The user physically moves to a location, scans the NFC tag, and the app automatically starts the task. The user then places the phone on a magnetic wall-mounted phone parking station and physically leaves the phone behind.
+
+The user performs the task.
+
+The user returns to the station, retrieves the phone, and scans the SAME NFC tag again.
+
+The first scan means:
+
+> START
+
+The second scan means:
+
+> COMPLETE
+
+The app should understand the state of the checkpoint and automatically determine whether a scan means starting or completing the task.
+
+The user should not have to manually select "Start Task" or "Complete Task" during normal operation.
+
+The goal is to minimize cognitive friction.
+
+---
+
+# IMPORTANT TECHNICAL REQUIREMENT
+
+Build the application as a React + TypeScript web application that is architected to later be packaged as a genuine Android application using Capacitor.
+
+The application should be designed with a clean separation between:
+
+1. Core application logic
+2. UI
+3. Database/persistence
+4. NFC abstraction layer
+5. Android/native functionality
+
+Do NOT pretend that ordinary browser JavaScript can reliably:
+
+* Read NFC tags on all Android devices
+* Run persistent alarms in the background
+* Lock the Android device
+* Prevent access to other applications
+* Maintain full-screen notifications indefinitely
+
+Instead, create clean interfaces/abstractions for these capabilities so that the web version can use simulation mode, while a future Capacitor Android layer can provide the real native functionality.
+
+The app must work fully in "Simulation Mode" without real NFC hardware.
+
+---
+
+# CORE USER EXPERIENCE
+
+The user should see only the most important next action.
+
+Avoid presenting a large overwhelming task list as the primary interface.
+
+The primary screen should be a "NEXT ACTION" screen.
+
+Example:
+
+NEXT
+
+🧘 STRETCH + FOAM ROLL
+
+Go to Station 2.
+
+[View details]
+
+The application should guide the user sequentially through the routine.
+
+The user should not need to think about the entire day.
+
+The user should only need to know:
+
+1. Where do I go?
+2. What do I do?
+3. When am I done?
+
+---
+
+# 10 PHYSICAL CHECKPOINTS
+
+Create the following default checkpoints:
+
+## Station 1 — OUT OF BED
+
+Location:
+Upstairs near the desk.
+
+Purpose:
+The user sleeps on the first floor and must physically leave the bed and walk upstairs.
+
+Task:
+Confirm that the user is physically out of bed.
+
+This checkpoint may have no meaningful timer.
+
+The important event is physical movement from the sleeping area to the checkpoint.
+
+Default duration:
+0 minutes.
+
+---
+
+## Station 2 — STRETCH + FOAM ROLL
+
+Location:
+Upstairs, separate from Station 1.
+
+Task:
+Stretch and use a foam roller.
+
+Default duration:
+10 minutes.
+
+The duration must be configurable.
+
+---
+
+## Station 3 — HYGIENE
+
+Location:
+Bathroom.
+
+Task:
+Wash face and brush teeth.
+
+Default duration:
+5 minutes.
+
+Configurable.
+
+---
+
+## Station 4 — SHOWER
+
+Location:
+Bathroom/shower area.
+
+Task:
+Take a shower.
+
+Default duration:
+10 minutes.
+
+Configurable.
+
+---
+
+## Station 5 — CLEAN FIRST FLOOR
+
+Location:
+First floor.
+
+Task:
+Clean the first floor.
+
+Default duration:
+15 minutes.
+
+Configurable.
+
+---
+
+## Station 6 — CLEAN SECOND FLOOR
+
+Location:
+Second floor.
+
+Task:
+Clean the second floor.
+
+Default duration:
+15 minutes.
+
+Configurable.
+
+---
+
+## Station 7 — TAKE TRASH OUT
+
+Location:
+Near the exterior exit door.
+
+Task:
+Take trash outside.
+
+Default duration:
+5 minutes.
+
+Configurable.
+
+---
+
+## Station 8 — WORK AT DESK
+
+Location:
+Desk.
+
+Task:
+Work at the desk.
+
+Default duration:
+25 minutes.
+
+Configurable.
+
+This checkpoint should eventually support repeated work sessions.
+
+After completing a work session, allow:
+
+[START ANOTHER SESSION]
+
+or
+
+[END WORK]
+
+---
+
+## Station 9 — DRINK WATER
+
+Location:
+User-defined.
+
+Task:
+Drink water.
+
+Default duration:
+No timer required.
+
+The app should display:
+
+💧 DRINK WATER
+
+Take 5 sips.
+
+The user scans the NFC tag once to start.
+
+The user drinks water.
+
+The user scans the same tag again to complete.
+
+Allow the user to configure the number of sips or quantity later.
+
+---
+
+## Station 10 — GO TO THE GYM
+
+Location:
+Home or departure point.
+
+Task:
+Go to the gym.
+
+Default duration:
+60 minutes.
+
+This is initially treated as a start/finish checkpoint.
+
+The user scans the tag to begin the gym routine.
+
+The user goes to the gym.
+
+When they return, they scan the same NFC tag to complete.
+
+Future versions may support GPS or an NFC tag at the gym, but do not implement that yet.
+
+---
+
+# NFC SYSTEM
+
+Each physical checkpoint has ONE NFC tag.
+
+The same tag is scanned twice.
+
+First scan:
+
+If checkpoint status is WAITING:
+
+→ Start checkpoint.
+
+Second scan:
+
+If checkpoint status is IN_PROGRESS:
+
+→ Complete checkpoint.
+
+Example:
+
+Station 2 NFC tag:
+
+First scan:
+
+"Stretch + foam roll started."
+
+Timer automatically starts.
+
+User puts phone on magnetic station.
+
+User leaves.
+
+User performs task.
+
+User returns.
+
+User scans same NFC tag.
+
+App detects:
+
+checkpoint status = IN_PROGRESS
+
+elapsed time = 12 minutes
+
+App marks checkpoint as COMPLETED.
+
+The user should not have to press buttons during normal operation.
+
+---
+
+# NFC TAG REGISTRATION
+
+Create a dedicated Settings/Admin section:
+
+NFC TAG MANAGER
+
+Allow the user to register physical tags.
+
+Flow:
+
+1. Tap "Register New NFC Tag"
+2. User scans an NFC tag
+3. Application reads the tag's unique identifier
+4. Display the identifier
+5. User selects which checkpoint it belongs to
+6. Save the association
+
+Example:
+
+NFC ID:
+04:8A:23:91
+
+Assigned to:
+Station 2 — Stretch + Foam Roll
+
+Store the mapping in the database.
+
+The application should NOT require the user to write information onto the NFC tag.
+
+The tag's unique ID is the identifier.
+
+Allow the user to:
+
+* Register tag
+* Reassign tag
+* Replace tag
+* Unregister tag
+* Test tag
+* View tag ID
+
+If the same NFC tag is scanned twice, it should toggle between START and COMPLETE based on the current checkpoint state.
+
+---
+
+# SIMULATION MODE
+
+Because development may happen before physical NFC tags arrive, implement Simulation Mode.
+
+The developer/user should be able to select:
+
+SIMULATE NFC SCAN
+
+Then select:
+
+* Station 1
+* Station 2
+* Station 3
+* Station 4
+* Station 5
+* Station 6
+* Station 7
+* Station 8
+* Station 9
+* Station 10
+
+Simulation must behave exactly like a real NFC scan.
+
+Example:
+
+Simulate Station 2.
+
+If Station 2 is WAITING:
+
+→ Start Station 2.
+
+Simulate Station 2 again.
+
+If Station 2 is IN_PROGRESS:
+
+→ Complete Station 2.
+
+This should allow the entire application logic to be tested before native NFC functionality is implemented.
+
+---
+
+# CHECKPOINT STATE MACHINE
+
+Each checkpoint should have a state.
+
+Possible states:
+
+WAITING
+
+IN_PROGRESS
+
+COMPLETED
+
+MISSED
+
+SKIPPED
+
+CANCELLED
+
+The normal state flow is:
+
+WAITING
+↓
+IN_PROGRESS
+↓
+COMPLETED
+
+A checkpoint can become MISSED if the user fails to complete it within its expected window.
+
+A missed checkpoint should NOT be permanently lost.
+
+The user should be able to complete a missed checkpoint later on the same day.
+
+---
+
+# AUTOMATIC TIMER SYSTEM
+
+Each checkpoint can optionally have a duration.
+
+Example:
+
+Stretching:
+10 minutes
+
+Hygiene:
+5 minutes
+
+Shower:
+10 minutes
+
+Cleaning:
+15 minutes
+
+Work:
+25 minutes
+
+When the NFC tag is scanned to START:
+
+The timer automatically begins.
+
+The user should NOT need to press Start.
+
+Display:
+
+🧘 STRETCH + FOAM ROLL
+
+10:00
+
+The timer should continue even if the user leaves the phone at the magnetic station.
+
+When the user returns and scans the same NFC tag:
+
+If the timer has completed:
+
+→ Mark COMPLETED.
+
+If the user returns before the timer finishes:
+
+Display:
+
+"You've been away for 2 minutes."
+
+"Your target time is 10 minutes."
+
+Then provide:
+
+[CONTINUE]
+
+[COMPLETE ANYWAY]
+
+[SKIP]
+
+Do not prevent completion forever.
+
+The user should always be able to override the system.
+
+---
+
+# MISSED CHECKPOINT SYSTEM
+
+Track checkpoints that were expected but not completed.
+
+At the end of the day, show:
+
+TODAY'S CHECKPOINTS
+
+✅ Out of bed
+
+✅ Stretching
+
+⚠️ Hygiene — Missed
+
+✅ Shower
+
+⚠️ Clean 1F — Missed
+
+✅ Work
+
+⚠️ Gym — Missed
+
+The user should be able to select:
+
+COMPLETE MISSED CHECKPOINT
+
+The system should allow missed tasks to be completed later on the same day.
+
+Never treat missed tasks as permanent failure.
+
+---
+
+# ENERGY MODES
+
+Implement three routine modes.
+
+## FULL MODE
+
+Full routine.
+
+Default example:
+
+1. Out of bed
+2. Stretch
+3. Hygiene
+4. Shower
+5. Clean 1F
+6. Clean 2F
+7. Trash
+8. Work
+9. Water
+10. Gym
+
+## REDUCED MODE
+
+Reduced routine.
+
+Focus on essential tasks and fewer chores.
+
+Example:
+
+1. Out of bed
+2. Hygiene
+3. Shower
+4. Water
+5. Work
+
+## SURVIVAL MODE
+
+Minimal routine.
+
+Example:
+
+1. Out of bed
+2. Bathroom/hygiene
+3. Water
+
+The user can manually switch modes.
+
+The system should NEVER shame the user for selecting Reduced or Survival Mode.
+
+The goal is consistency without burnout.
+
+---
+
+# FREEZE / EXECUTIVE DYSFUNCTION INTERVENTION SYSTEM
+
+This is a core feature.
+
+The system should detect when the user is stuck at a checkpoint.
+
+Example:
+
+NEXT ACTION:
+
+💻 GO TO DESK
+
+If the user does not progress for a configurable amount of time:
+
+After 5 minutes:
+
+"Still here?"
+
+"Let's make it smaller."
+
+"Just stand up."
+
+After another configurable period:
+
+"You're stuck. That's okay."
+
+"What is making this difficult?"
+
+Options:
+
+🟢 I'm tired
+
+🟡 I'm overwhelmed
+
+🔵 I'm distracted
+
+⚪ I don't know
+
+Based on the selection, provide an appropriate intervention.
+
+If TIRED:
+
+"Let's switch to Reduced Mode."
+
+If OVERWHELMED:
+
+"Forget the whole task."
+
+"Just take one step toward the station."
+
+If DISTRACTED:
+
+"Put your phone on the station."
+
+If DON'T KNOW:
+
+"Your only task is to stand up."
+
+The system should reduce the next action to the smallest possible physical transition.
+
+The philosophy is:
+
+> Action first. Thinking later.
+
+---
+
+# NEXT ACTION ENGINE
+
+The application should always know the user's current next recommended action.
+
+Example:
+
+Current state:
+
+Station 1 completed.
+
+Next:
+
+Station 2.
+
+Display:
+
+NEXT
+
+🧘 STRETCH + FOAM ROLL
+
+Go to Station 2.
+
+When Station 2 is completed:
+
+NEXT
+
+🪥 WASH FACE + BRUSH TEETH
+
+Go to the bathroom.
+
+The user should not need to manually choose the next task during normal routine operation.
+
+---
+
+# PHONE PARKING CONCEPT
+
+The physical system uses magnetic wall-mounted phone parking stations.
+
+The user has a magnetic phone case or magnetic ring.
+
+Each checkpoint has a magnetic parking spot.
+
+The intended physical interaction is:
+
+1. Arrive at checkpoint.
+2. Scan NFC.
+3. Task automatically starts.
+4. Place phone on magnetic wall station.
+5. Leave phone behind.
+6. Perform task.
+7. Return.
+8. Pick up phone.
+9. Scan same NFC tag.
+10. Task completes.
+11. Phone shows next checkpoint.
+
+The application should visually communicate:
+
+📱 PARK YOUR PHONE
+
+when appropriate.
+
+This is a central part of the system.
+
+---
+
+# PERSISTENT ALARM SYSTEM
+
+The application should eventually support persistent alarms.
+
+For Station 1:
+
+At the configured wake-up time:
+
+Alarm begins.
+
+Display:
+
+🛏️ GET OUT OF BED
+
+GO TO STATION 1
+
+The alarm should continue until the user physically reaches Station 1 and scans its NFC tag.
+
+The normal browser version may use notifications and visible timers, but architect the system so the future Android/Capacitor version can implement:
+
+* Persistent alarms
+* Full-screen alarm notifications
+* Background notifications
+* Alarm dismissal only after NFC checkpoint
+* Vibration
+* Sound
+* Escalating reminders
+
+The user should be able to configure:
+
+* Alarm time
+* Sound
+* Vibration
+* Escalation interval
+* Maximum escalation level
+
+---
+
+# PHONE DISTRACTION / LOCK SYSTEM
+
+Create a "Strict Mode" architecture.
+
+The intended future behavior:
+
+Once a checkpoint starts:
+
+The phone becomes restricted until the checkpoint is completed.
+
+The user should not be able to casually open distracting applications.
+
+However, do NOT falsely implement this as a browser feature.
+
+For the web prototype:
+
+Display:
+
+PHONE FOCUS MODE
+
+"Your phone is parked."
+
+For the future Android/Capacitor version:
+
+Prepare a native integration layer that can eventually support Android restricted/kiosk/lock-task behavior where technically and legally possible.
+
+Always allow an emergency override.
+
+The user should be able to exit strict mode through an explicit override.
+
+Record the override in history.
+
+---
+
+# ADAPTIVE ROUTINE
+
+The system should learn from user behavior over time.
+
+Track:
+
+* Completion rate
+* Missed checkpoints
+* Skipped checkpoints
+* Override usage
+* Average completion time
+* Time spent stuck
+* Which checkpoints cause the most difficulty
+* Which days have low completion
+* Which energy mode was selected
+
+Display simple insights.
+
+Example:
+
+"Your most difficult transition is Bed → Station 1."
+
+"You're most likely to get stuck before starting work."
+
+"You complete routines more consistently in Reduced Mode."
+
+Do not overwhelm the user with charts.
+
+The goal is actionable insight.
+
+---
+
+# DAILY HISTORY
+
+Create a simple history screen.
+
+Show:
+
+Today
+
+Yesterday
+
+Last 7 days
+
+For each day:
+
+* Completed
+* Missed
+* Skipped
+* Overridden
+
+Example:
+
+Monday
+
+✅ 7 completed
+
+⚠️ 2 missed
+
+⏭️ 1 skipped
+
+Do not use "failure" language.
+
+Use neutral language.
+
+---
+
+# SETTINGS
+
+Create a Settings screen where the user can modify:
+
+* Checkpoint name
+* Icon
+* Description
+* Duration
+* Minimum completion duration
+* Energy mode availability
+* Routine order
+* Active/inactive status
+* NFC tag association
+* Alarm time
+* Notification preferences
+* Vibration
+* Sound
+* Freeze intervention timing
+* Strict mode
+* Emergency override behavior
+
+Allow the user to add additional checkpoints later.
+
+The system should NOT be hard-coded to exactly 10 checkpoints.
+
+10 should simply be the default configuration.
+
+---
+
+# VISUAL DESIGN
+
+The visual design should be:
+
+* Extremely minimal
+* Calm
+* Clean
+* Mobile-first
+* Soft neutral background
+* Subtle blue and green accents
+* Large typography
+* Large buttons
+* Very little text
+* No clutter
+* No gamification by default
+* No aggressive streaks
+* No shame-based language
+
+The primary screen should focus on ONE next action.
+
+Example:
+
+NEXT
+
+🧘
+
+STRETCH + FOAM ROLL
+
+Go to Station 2.
+
+[View Details]
+
+When a task is active:
+
+🧘
+
+STRETCH + FOAM ROLL
+
+10:00
+
+📱
+
+PARK YOUR PHONE
+
+When completed:
+
+✅
+
+DONE
+
+Next:
+
+🪥 WASH FACE + BRUSH TEETH
+
+---
+
+# DATABASE
+
+Use a reliable database suitable for the Replit environment.
+
+Create tables/models for:
+
+Users
+
+Checkpoints
+
+NfcTags
+
+DailyRoutine
+
+RoutineSessions
+
+CheckpointSessions
+
+CheckpointHistory
+
+Settings
+
+EnergyModes
+
+FreezeInterventions
+
+Overrides
+
+The database should be designed so the system can later support multiple users, even if the first version is single-user.
+
+---
+
+# OFFLINE-FIRST BEHAVIOR
+
+The application should continue to function as much as possible if the phone temporarily loses internet.
+
+The routine state and checkpoint progress should be stored locally and synchronized with the database when connectivity returns.
+
+This is especially important because the user may be moving around the house and should not depend on a perfect internet connection.
+
+---
+
+# DEVELOPMENT MODE
+
+Include a Developer/Testing section.
+
+Allow:
+
+* Simulate NFC scan
+* Reset today's routine
+* Complete checkpoint
+* Miss checkpoint
+* Skip checkpoint
+* Fast-forward timer
+* Trigger freeze intervention
+* Test alarm
+* Test notification
+* View current state
+* View event log
+
+This is essential for development.
+
+---
+
+# EVENT LOG
+
+Create a debug event log showing events such as:
+
+08:00 — Alarm triggered
+
+08:04 — Station 1 NFC scanned
+
+08:04 — Station 1 started
+
+08:05 — Phone parked
+
+08:15 — Station 1 completed
+
+08:16 — Next checkpoint: Station 2
+
+This will make debugging much easier.
+
+---
+
+# ARCHITECTURE
+
+Use clean modular architecture.
+
+Suggested modules:
+
+/components
+
+/screens
+
+/hooks
+
+/services
+
+/nfc
+
+/routine-engine
+
+/notifications
+
+/timers
+
+/database
+
+/storage
+
+/native
+
+/types
+
+/utils
+
+The NFC layer should expose an abstraction such as:
+
+scanNfcTag()
+
+registerNfcTag()
+
+getNfcTagId()
+
+The web development environment should provide a simulated implementation.
+
+The future Android implementation should provide the real NFC implementation.
+
+Similarly, create an abstraction for:
+
+triggerAlarm()
+
+scheduleNotification()
+
+enableStrictMode()
+
+disableStrictMode()
+
+The web version can provide simulated/browser-compatible behavior.
+
+The future Android layer can provide native implementations.
+
+---
+
+# IMPORTANT IMPLEMENTATION RULES
+
+Do not build fake NFC functionality and claim it is real NFC.
+
+Do not claim that a browser can lock Android applications.
+
+Do not claim that a browser can guarantee persistent background alarms.
+
+Clearly separate:
+
+WEB PROTOTYPE FUNCTIONALITY
+
+from
+
+NATIVE ANDROID FUNCTIONALITY.
+
+Build the application so that the web prototype is fully testable using Simulation Mode.
+
+Then make the project ready to add Capacitor and native Android plugins.
+
+---
+
+# INITIAL DEVELOPMENT PRIORITY
+
+Build in this order:
+
+PHASE 1
+
+1. Project setup
+2. Mobile-first UI
+3. Database
+4. Checkpoint system
+5. Routine state machine
+6. Next Action engine
+7. Timer system
+8. Daily history
+
+PHASE 2
+
+9. Simulation Mode
+10. NFC Tag Manager UI
+11. Tag-to-checkpoint mapping
+12. One-tag Start/Complete logic
+13. Missed checkpoint system
+14. Energy Modes
+
+PHASE 3
+
+15. Freeze Intervention system
+16. Persistent task states
+17. Developer testing tools
+18. Event log
+
+PHASE 4
+
+19. Notification architecture
+20. Alarm architecture
+21. Capacitor readiness
+22. Native NFC integration plan
+23. Native Android background behavior plan
+24. Strict Mode architecture
+
+Do not attempt to implement all native Android functionality before the core web application is working.
+
+---
+
+# ACCEPTANCE TEST
+
+The application is considered successful when the following flow works in Simulation Mode:
+
+1. User opens the app.
+2. App displays the current next action.
+3. User simulates Station 1 NFC.
+4. Station 1 changes from WAITING to IN_PROGRESS.
+5. The appropriate task begins.
+6. User simulates Station 1 NFC again.
+7. Station 1 becomes COMPLETED.
+8. App automatically displays Station 2 as the next action.
+9. User simulates Station 2.
+10. Timer automatically starts.
+11. User simulates Station 2 again too early.
+12. App warns that the minimum duration has not been reached.
+13. User can continue, complete anyway, or skip.
+14. Missed checkpoints are recorded.
+15. Missed checkpoints remain available later in the day.
+16. Energy Modes change the active routine.
+17. Freeze interventions trigger when configured.
+18. Daily history records all events.
+19. NFC tags can be registered and mapped to checkpoints.
+20. The same NFC tag can start and complete a checkpoint based on its current state.
+
+The final result should feel like a calm, intelligent "physical transition assistant" rather than a traditional productivity or habit-tracking app.
+
+The core experience should always reinforce:
+
+> **Don't think about the whole day. Just move to the next station.**

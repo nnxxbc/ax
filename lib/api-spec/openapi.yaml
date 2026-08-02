@@ -3,20 +3,36 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Physical Transition Assistant API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: checkpoints
+    description: Station/checkpoint management
+  - name: nfc
+    description: NFC tag management and scanning
+  - name: routines
+    description: Daily routine management
+  - name: sessions
+    description: Checkpoint session actions
+  - name: history
+    description: Historical data
+  - name: settings
+    description: App settings
+  - name: events
+    description: Event log
+  - name: insights
+    description: Adaptive insights
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +40,797 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # --- Checkpoints ---
+  /checkpoints:
+    get:
+      operationId: listCheckpoints
+      tags: [checkpoints]
+      summary: List all checkpoints
+      responses:
+        "200":
+          description: List of checkpoints
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Checkpoint"
+    post:
+      operationId: createCheckpoint
+      tags: [checkpoints]
+      summary: Create a new checkpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckpointInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Checkpoint"
+
+  /checkpoints/{id}:
+    get:
+      operationId: getCheckpoint
+      tags: [checkpoints]
+      summary: Get a checkpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Checkpoint"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateCheckpoint
+      tags: [checkpoints]
+      summary: Update a checkpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckpointUpdate"
+      responses:
+        "200":
+          description: Updated checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Checkpoint"
+    delete:
+      operationId: deleteCheckpoint
+      tags: [checkpoints]
+      summary: Delete a checkpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+
+  # --- NFC Tags ---
+  /nfc-tags:
+    get:
+      operationId: listNfcTags
+      tags: [nfc]
+      summary: List all registered NFC tags
+      responses:
+        "200":
+          description: List of NFC tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NfcTag"
+    post:
+      operationId: createNfcTag
+      tags: [nfc]
+      summary: Register a new NFC tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NfcTagInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfcTag"
+
+  /nfc-tags/{id}:
+    patch:
+      operationId: updateNfcTag
+      tags: [nfc]
+      summary: Update an NFC tag assignment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NfcTagUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfcTag"
+    delete:
+      operationId: deleteNfcTag
+      tags: [nfc]
+      summary: Unregister an NFC tag
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Deleted
+
+  /nfc/scan:
+    post:
+      operationId: handleNfcScan
+      tags: [nfc]
+      summary: Handle an NFC tag scan (real or simulated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NfcScanInput"
+      responses:
+        "200":
+          description: Scan result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfcScanResult"
+
+  /nfc/simulate:
+    post:
+      operationId: simulateNfcScan
+      tags: [nfc]
+      summary: Simulate an NFC scan for a checkpoint by ID (dev mode)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NfcSimulateInput"
+      responses:
+        "200":
+          description: Simulation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfcScanResult"
+
+  # --- Daily Routine ---
+  /routines/today:
+    get:
+      operationId: getTodayRoutine
+      tags: [routines]
+      summary: Get today's routine with all checkpoint sessions
+      responses:
+        "200":
+          description: Today's routine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyRoutine"
+    post:
+      operationId: startTodayRoutine
+      tags: [routines]
+      summary: Start or reset today's routine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineStartInput"
+      responses:
+        "200":
+          description: Routine created/reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyRoutine"
+
+  /routines/today/summary:
+    get:
+      operationId: getTodaySummary
+      tags: [routines]
+      summary: Get today's completion summary stats
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineSummary"
+
+  # --- Sessions ---
+  /sessions/{id}/action:
+    post:
+      operationId: sessionAction
+      tags: [sessions]
+      summary: Perform an action on a checkpoint session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionActionInput"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckpointSession"
+
+  # --- History ---
+  /history:
+    get:
+      operationId: listHistory
+      tags: [history]
+      summary: Get daily history (last 7 days)
+      responses:
+        "200":
+          description: History list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DayHistory"
+
+  /history/{date}:
+    get:
+      operationId: getDayHistory
+      tags: [history]
+      summary: Get history for a specific date (YYYY-MM-DD)
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Day history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayHistory"
+
+  # --- Settings ---
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get app settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update app settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppSettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+
+  # --- Event Log ---
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: Get event log (most recent first)
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventLogEntry"
+
+  /events/clear:
+    post:
+      operationId: clearEvents
+      tags: [events]
+      summary: Clear the event log
+      responses:
+        "204":
+          description: Cleared
+
+  # --- Insights ---
+  /insights:
+    get:
+      operationId: getInsights
+      tags: [insights]
+      summary: Get adaptive insights based on usage history
+      responses:
+        "200":
+          description: Insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsightsResult"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    # --- Checkpoint ---
+    Checkpoint:
+      type: object
+      required: [id, name, icon, order, defaultDurationMinutes, isActive, location, energyModes, createdAt]
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        order:
+          type: number
+        defaultDurationMinutes:
+          type: number
+        minDurationMinutes:
+          type: number
+        isActive:
+          type: boolean
+        energyModes:
+          type: array
+          items:
+            type: string
+        nfcTagId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    CheckpointInput:
+      type: object
+      required: [name, icon, order]
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        order:
+          type: number
+        defaultDurationMinutes:
+          type: number
+        minDurationMinutes:
+          type: number
+        isActive:
+          type: boolean
+        energyModes:
+          type: array
+          items:
+            type: string
+
+    CheckpointUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        order:
+          type: number
+        defaultDurationMinutes:
+          type: number
+        minDurationMinutes:
+          type: number
+        isActive:
+          type: boolean
+        energyModes:
+          type: array
+          items:
+            type: string
+
+    # --- NFC Tags ---
+    NfcTag:
+      type: object
+      required: [id, tagUid, label, createdAt]
+      properties:
+        id:
+          type: number
+        tagUid:
+          type: string
+        label:
+          type: ["string", "null"]
+        checkpointId:
+          type: ["integer", "null"]
+        checkpointName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    NfcTagInput:
+      type: object
+      required: [tagUid]
+      properties:
+        tagUid:
+          type: string
+        label:
+          type: string
+        checkpointId:
+          type: number
+
+    NfcTagUpdate:
+      type: object
+      properties:
+        label:
+          type: string
+        checkpointId:
+          type: ["integer", "null"]
+
+    NfcScanInput:
+      type: object
+      required: [tagUid]
+      properties:
+        tagUid:
+          type: string
+
+    NfcSimulateInput:
+      type: object
+      required: [checkpointId]
+      properties:
+        checkpointId:
+          type: number
+
+    NfcScanResult:
+      type: object
+      required: [action, sessionId, checkpointId, checkpointName]
+      properties:
+        action:
+          type: string
+          enum: [started, completed, early_complete_warning, no_checkpoint_assigned, unknown_tag]
+        sessionId:
+          type: ["integer", "null"]
+        checkpointId:
+          type: ["integer", "null"]
+        checkpointName:
+          type: ["string", "null"]
+        message:
+          type: string
+        elapsedMinutes:
+          type: ["integer", "null"]
+        targetMinutes:
+          type: ["integer", "null"]
+        session:
+          $ref: "#/components/schemas/CheckpointSession"
+
+    # --- Routines ---
+    DailyRoutine:
+      type: object
+      required: [id, date, energyMode, status, sessions, createdAt]
+      properties:
+        id:
+          type: number
+        date:
+          type: string
+        energyMode:
+          type: string
+          enum: [full, reduced, survival]
+        status:
+          type: string
+          enum: [active, completed, abandoned]
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckpointSession"
+        createdAt:
+          type: string
+
+    RoutineStartInput:
+      type: object
+      required: [energyMode]
+      properties:
+        energyMode:
+          type: string
+          enum: [full, reduced, survival]
+        reset:
+          type: boolean
+
+    RoutineSummary:
+      type: object
+      required: [date, energyMode, totalSessions, completed, missed, skipped, overridden, inProgress, waiting]
+      properties:
+        date:
+          type: string
+        energyMode:
+          type: string
+        totalSessions:
+          type: number
+        completed:
+          type: number
+        missed:
+          type: number
+        skipped:
+          type: number
+        overridden:
+          type: number
+        inProgress:
+          type: number
+        waiting:
+          type: number
+        nextSession:
+          $ref: "#/components/schemas/CheckpointSession"
+
+    # --- Sessions ---
+    CheckpointSession:
+      type: object
+      required: [id, routineId, checkpointId, status, order]
+      properties:
+        id:
+          type: number
+        routineId:
+          type: number
+        checkpointId:
+          type: number
+        checkpointName:
+          type: string
+        checkpointIcon:
+          type: string
+        checkpointLocation:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [waiting, in_progress, completed, missed, skipped, cancelled]
+        order:
+          type: number
+        startedAt:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+        durationMinutes:
+          type: ["integer", "null"]
+        targetDurationMinutes:
+          type: ["integer", "null"]
+        minDurationMinutes:
+          type: ["integer", "null"]
+        elapsedSeconds:
+          type: ["integer", "null"]
+        skipReason:
+          type: ["string", "null"]
+        overrideReason:
+          type: ["string", "null"]
+
+    SessionActionInput:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [start, complete, skip, miss, cancel, complete_anyway, continue]
+        reason:
+          type: string
+
+    # --- History ---
+    DayHistory:
+      type: object
+      required: [date, energyMode, completed, missed, skipped, overridden, totalSessions]
+      properties:
+        date:
+          type: string
+        energyMode:
+          type: ["string", "null"]
+        totalSessions:
+          type: number
+        completed:
+          type: number
+        missed:
+          type: number
+        skipped:
+          type: number
+        overridden:
+          type: number
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckpointSession"
+
+    # --- Settings ---
+    AppSettings:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: number
+        alarmTime:
+          type: ["string", "null"]
+        alarmEnabled:
+          type: boolean
+        freezeInterventionDelayMinutes:
+          type: number
+        freezeEscalationDelayMinutes:
+          type: number
+        strictModeEnabled:
+          type: boolean
+        notificationsEnabled:
+          type: boolean
+        vibrationEnabled:
+          type: boolean
+        soundEnabled:
+          type: boolean
+        defaultEnergyMode:
+          type: string
+          enum: [full, reduced, survival]
+        simulationModeEnabled:
+          type: boolean
+        developerModeEnabled:
+          type: boolean
+
+    AppSettingsUpdate:
+      type: object
+      properties:
+        alarmTime:
+          type: string
+        alarmEnabled:
+          type: boolean
+        freezeInterventionDelayMinutes:
+          type: number
+        freezeEscalationDelayMinutes:
+          type: number
+        strictModeEnabled:
+          type: boolean
+        notificationsEnabled:
+          type: boolean
+        vibrationEnabled:
+          type: boolean
+        soundEnabled:
+          type: boolean
+        defaultEnergyMode:
+          type: string
+          enum: [full, reduced, survival]
+        simulationModeEnabled:
+          type: boolean
+        developerModeEnabled:
+          type: boolean
+
+    # --- Event Log ---
+    EventLogEntry:
+      type: object
+      required: [id, eventType, message, timestamp]
+      properties:
+        id:
+          type: number
+        eventType:
+          type: string
+        message:
+          type: string
+        checkpointId:
+          type: ["integer", "null"]
+        checkpointName:
+          type: ["string", "null"]
+        sessionId:
+          type: ["integer", "null"]
+        details:
+          type: ["string", "null"]
+        timestamp:
+          type: string
+
+    # --- Insights ---
+    InsightItem:
+      type: object
+      required: [type, message, severity]
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [info, tip, warning]
+        checkpointId:
+          type: ["integer", "null"]
+        checkpointName:
+          type: ["string", "null"]
+
+    InsightsResult:
+      type: object
+      required: [insights, completionRatePercent, mostDifficultCheckpoint, bestEnergyMode, streakDays]
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsightItem"
+        completionRatePercent:
+          type: number
+        mostDifficultCheckpoint:
+          type: ["string", "null"]
+        bestEnergyMode:
+          type: ["string", "null"]
+        streakDays:
+          type: number
+        averageCompletionMinutes:
+          type: ["integer", "null"]

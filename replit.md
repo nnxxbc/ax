@@ -1,12 +1,12 @@
-# [Project name]
+# Physical Transition Assistant
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A calm, mobile-first web app that guides people with executive dysfunction through physical checkpoints (stations) around their home, one at a time. The core idea: **Don't think about the whole day. Just move to the next station.**
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/transition-assistant run dev` — run the frontend (port 18736)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
@@ -14,23 +14,40 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
+- Frontend: React + Vite, TailwindCSS, wouter, TanStack Query, shadcn/ui, Outfit font
+- API: Express 5, OpenAPI-first with Orval codegen
 - DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
+- Validation: Zod v3, drizzle-zod
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/api-spec/openapi.yaml` — single source of truth for API contracts
+- `lib/api-client-react/src/generated/` — generated React Query hooks (do not hand-edit)
+- `lib/api-zod/src/generated/` — generated Zod schemas for server validation
+- `lib/db/src/schema/` — Drizzle table definitions (checkpoints, sessions, routines, nfc_tags, settings, event_log)
+- `artifacts/api-server/src/routes/` — Express route handlers
+- `artifacts/api-server/src/lib/` — shared server libs (event-logger, routine-helpers, nfc-scan-processor)
+- `artifacts/transition-assistant/src/pages/` — app pages (home, simulate, history, settings, nfc-tags, insights, dev)
+- `artifacts/transition-assistant/src/components/layout/app-layout.tsx` — bottom nav + app shell
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **NFC abstraction**: All NFC logic routes through `POST /api/nfc/scan` (real tag UID) or `POST /api/nfc/simulate` (checkpoint ID). The same `processNfcScan` function handles both. Future Capacitor integration only needs to supply the tagUid from native NFC.
+- **One-tag start/complete**: The scan processor checks session state — WAITING → start, IN_PROGRESS → complete (or warn if too early).
+- **getOrCreateTodayRoutine**: Auto-creates today's routine with appropriate sessions on first API call. Energy mode determines which checkpoints are included.
+- **Codegen fix**: Orval v8 generates `zod.int()` (Zod v4 syntax) but the project uses Zod v3. A post-process step in the codegen script replaces `zod.int()` with `zod.number()` in the generated api-zod file.
+- **Capacitor-ready**: Clean separation between web simulation and native layers. Server abstractions (`triggerAlarm`, `scheduleNotification`, `enableStrictMode`) are designed to be replaced with Capacitor plugin calls.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Home screen**: Shows one thing — the NEXT station to go to. When a session is in-progress, shows a full-screen "PARK YOUR PHONE" lock-screen with an elapsed timer.
+- **Stations (NFC Simulator)**: Grid of all 10 stations. Tap to simulate a scan — app auto-determines start vs complete based on state.
+- **Energy Modes**: FULL (all 10 stations) / REDUCED (5 essentials) / SURVIVAL (3 absolute essentials). No shame, no streaks.
+- **Freeze Intervention**: Gentle overlay when user is stuck — "Still here? Let's make it smaller. Just stand up."
+- **History**: Last 7 days, neutral language, completion counts per day.
+- **Insights**: Adaptive patterns — most difficult station, best energy mode, streak days.
+- **Dev Tools**: Event log, fast-forward timers, simulate/reset, test alarm (behind Developer Mode toggle in Settings).
 
 ## User preferences
 
@@ -38,7 +55,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- **Codegen post-process**: `lib/api-spec/package.json` codegen script includes a node one-liner to replace `zod.int()` → `zod.number()` in the generated Zod file. This must stay whenever the spec changes.
+- **Routine creation timing**: `getOrCreateTodayRoutine` only includes checkpoints that exist at creation time. If checkpoints are added after a routine is created for today, call `POST /api/routines/today` with `{ energyMode, reset: true }` to rebuild sessions.
+- Always use `pnpm run typecheck` not `pnpm run build` from the shell — build requires workflow-provided `PORT` and `BASE_PATH`.
 
 ## Pointers
 

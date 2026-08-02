@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Physical Transition Assistant"
+description = "A mobile-first physical transition assistant for people with executive dysfunction. Guides users through physical checkpoints (stations) around their home using NFC tags and simulation mode. Features a calm, minimal UI focused on the single next action, timer system, energy modes (Full/Reduced/Survival), freeze intervention, daily history, and developer tools."
+version = "1.0.0"
+id = "artifacts/transition-assistant"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18736
+
+[services.development]
+run = "pnpm --filter @workspace/transition-assistant run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/transition-assistant", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/transition-assistant/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18736"
+BASE_PATH = "/"
