@@ -73,6 +73,13 @@ router.post("/sessions/:id/action", async (req, res): Promise<void> => {
       // No-op — user chose to continue
       await logEvent(req, "session_continued", `${cpName} — user chose to continue`, { checkpointId: session.checkpointId, sessionId: session.id });
       break;
+    case "extend_time": {
+      const addMins = typeof bodyParsed.data.additionalMinutes === "number" ? bodyParsed.data.additionalMinutes : 0;
+      const current = session.targetDurationMinutes ?? 0;
+      updates = { targetDurationMinutes: current + addMins };
+      await logEvent(req, "session_extended", `${cpName} extended by ${addMins} min`, { checkpointId: session.checkpointId, sessionId: session.id });
+      break;
+    }
   }
 
   if (Object.keys(updates).length > 0) {

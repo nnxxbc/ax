@@ -9,6 +9,7 @@ import { Settings } from "@/pages/settings";
 import { NfcTags } from "@/pages/nfc-tags";
 import { Insights } from "@/pages/insights";
 import { Dev } from "@/pages/dev";
+import { Checkpoints } from "@/pages/checkpoints";
 import { Toaster } from "@/components/ui/sonner";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ function Router() {
         <Route path="/history" component={History} />
         <Route path="/settings" component={Settings} />
         <Route path="/nfc-tags" component={NfcTags} />
+        <Route path="/checkpoints" component={Checkpoints} />
         <Route path="/insights" component={Insights} />
         <Route path="/dev" component={Dev} />
         <Route component={NotFound} />

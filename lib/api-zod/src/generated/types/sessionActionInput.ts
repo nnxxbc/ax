@@ -10,4 +10,6 @@ import type { SessionActionInputAction } from './sessionActionInputAction';
 export interface SessionActionInput {
   action: SessionActionInputAction;
   reason?: string;
+  /** Minutes to add to the current session target (used with extend_time action) */
+  additionalMinutes?: number;
 }

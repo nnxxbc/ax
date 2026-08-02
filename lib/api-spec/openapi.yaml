@@ -691,9 +691,12 @@ components:
       properties:
         action:
           type: string
-          enum: [start, complete, skip, miss, cancel, complete_anyway, continue]
+          enum: [start, complete, skip, miss, cancel, complete_anyway, continue, extend_time]
         reason:
           type: string
+        additionalMinutes:
+          type: number
+          description: Minutes to add to the current session target (used with extend_time action)
 
     # --- History ---
     DayHistory:

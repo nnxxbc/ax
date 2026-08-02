@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Loader2, Volume2, Vibrate, Bell, Wrench, SmartphoneNfc } from "lucide-react";
+import { Loader2, Volume2, Vibrate, Bell, Wrench, SmartphoneNfc, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
@@ -37,6 +37,22 @@ export function Settings() {
       </div>
 
       <div className="space-y-4">
+
+        <h2 className="px-2 text-sm font-semibold tracking-widest text-muted-foreground uppercase mb-2">Routine</h2>
+        <Card className="shadow-sm border-border/40">
+          <CardContent className="p-0">
+            <Link href="/checkpoints" className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors active:bg-muted">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Clock size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Checkpoint Durations</h3>
+                <p className="text-sm text-muted-foreground">Set default times for each station</p>
+              </div>
+            </Link>
+          </CardContent>
+        </Card>
+
         <Card className="shadow-sm border-border/40">
           <CardContent className="p-0 divide-y divide-border/50">
             <SettingRow 

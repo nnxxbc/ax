@@ -379,8 +379,9 @@ export const SessionActionParams = zod.object({
 })
 
 export const SessionActionBody = zod.object({
-  "action": zod.enum(['start', 'complete', 'skip', 'miss', 'cancel', 'complete_anyway', 'continue']),
-  "reason": zod.string().optional()
+  "action": zod.enum(['start', 'complete', 'skip', 'miss', 'cancel', 'complete_anyway', 'continue', 'extend_time']),
+  "reason": zod.string().optional(),
+  "additionalMinutes": zod.number().optional().describe('Minutes to add to the current session target (used with extend_time action)')
 })
 
 export const SessionActionResponse = zod.object({

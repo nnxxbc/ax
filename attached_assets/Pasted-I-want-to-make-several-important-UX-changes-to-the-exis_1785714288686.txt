@@ -1,0 +1,467 @@
+I want to make several important UX changes to the existing Physical Transition Assistant. Please modify the existing application rather than rebuilding it from scratch.
+
+## 1. MAKE THE CURRENT TASK MUCH BIGGER
+
+The current active task screen has too much empty space and the actual task name is too small.
+
+When a task is in progress, the task name should be the **dominant element on the screen**.
+
+For example:
+
+STRETCH
++
+FOAM ROLL
+
+The task name should be large enough to immediately understand from a quick glance.
+
+The current timer should also be prominent but secondary to the task name.
+
+The screen hierarchy should be:
+
+1. Task name — VERY LARGE
+2. Timer — LARGE
+3. Phone parking instruction — clear but smaller
+4. Add Time buttons — easy to access
+5. Minimal navigation
+
+The user should be able to understand the screen in less than one second.
+
+The active task screen should feel extremely simple and focused.
+
+---
+
+# 2. REMOVE THE "DONE" BUTTON COMPLETELY
+
+There should be NO "Done" button on the active task screen.
+
+The task must ONLY be completed by scanning the SAME NFC tag again.
+
+The intended flow is:
+
+1. User arrives at station.
+2. User scans NFC tag.
+3. Task automatically starts.
+4. Timer automatically starts.
+5. User parks the phone on the magnetic phone holder.
+6. User physically leaves the phone.
+7. User performs the task.
+8. User returns.
+9. User picks up the phone.
+10. User scans the SAME NFC tag again.
+11. Task is automatically completed.
+
+The app should never ask the user to press "Done" during the normal flow.
+
+The second NFC scan is the completion action.
+
+The UI should clearly communicate this.
+
+For example, while a task is running:
+
+STRETCH + FOAM ROLL
+
+09:32
+
+PARK YOUR PHONE
+
+Leave it here and do your task.
+
+When the user returns to the phone, the screen should show:
+
+STRETCH + FOAM ROLL
+
+09:32
+
+RETURN & SCAN
+
+Scan the same NFC tag to complete.
+
+The UI should make it very clear that the task is waiting for the second NFC scan.
+
+---
+
+# 3. ADD TIME BUTTONS WHILE A TASK IS RUNNING
+
+While a task is active, add three buttons:
+
++5 MIN
+
++10 MIN
+
++30 MIN
+
+These buttons should increase the remaining timer.
+
+Example:
+
+Current timer:
+
+09:32
+
+User taps:
+
++10 MIN
+
+Timer becomes:
+
+19:32
+
+The user can tap the buttons multiple times.
+
+IMPORTANT:
+
+There should be NO buttons to reduce the timer.
+
+The user can only extend the task duration.
+
+Do not add:
+
+* -5 min
+* -10 min
+* -30 min
+* Reduce time
+* Shorten task
+
+Only:
+
++5 MIN
++10 MIN
++30 MIN
+
+The buttons should be visually obvious but not more prominent than the task name.
+
+Place them directly below the timer.
+
+---
+
+# 4. MAKE TIMER CONFIGURATION MUCH EASIER
+
+I want an extremely easy way to configure the default duration for each checkpoint BEFORE starting the routine.
+
+I don't want to navigate through complicated settings or manually type seconds.
+
+Create a dedicated "Routine" or "Checkpoint Settings" interface where I can see ALL 10 checkpoints at once.
+
+Example:
+
+CHECKPOINTS
+
+🛏️ Out of Bed
+0 min
+
+🧘 Stretch + Foam Roll
+10 min
+
+🪥 Hygiene
+5 min
+
+🚿 Shower
+10 min
+
+🧹 Clean First Floor
+15 min
+
+🧹 Clean Second Floor
+15 min
+
+🗑️ Take Trash Out
+5 min
+
+💻 Work at Desk
+25 min
+
+💧 Drink Water
+No timer
+
+🏋️ Go to Gym
+60 min
+
+Each checkpoint should have a clear EDIT button or be clickable.
+
+When I click a checkpoint, open a very simple duration editor.
+
+For example:
+
+STRETCH + FOAM ROLL
+
+How long should this task normally take?
+
+[ - ] 10 [ + ]
+
+or provide quick preset buttons:
+
+5 min
+10 min
+15 min
+20 min
+25 min
+30 min
+45 min
+60 min
+No timer
+
+The user should be able to change the default duration very quickly.
+
+The selected duration should be saved and used automatically every time the task is started.
+
+For example:
+
+If I configure Stretch + Foam Roll = 15 minutes,
+
+then every time I scan the Stretch NFC tag to START:
+
+The timer automatically starts at:
+
+15:00
+
+I should not need to configure it again.
+
+---
+
+# 5. SEPARATE DEFAULT TIME FROM CURRENT TASK TIME
+
+The configured duration is the DEFAULT duration.
+
+Example:
+
+Default duration:
+
+10 minutes
+
+Today I start the task.
+
+Timer:
+
+10:00
+
+I tap:
+
++10 MIN
+
+Timer becomes:
+
+20:00
+
+The default duration should remain:
+
+10 minutes.
+
+The +5/+10/+30 buttons should only modify the CURRENT active session.
+
+They should NOT permanently change the default duration.
+
+If I want to permanently change the default duration, I do that in the Checkpoint Settings screen.
+
+---
+
+# 6. MAKE THE NEXT ACTION SCREEN SIMPLE AND LARGE
+
+The "NEXT" screen should also prioritize the task.
+
+For example:
+
+NEXT
+
+🧘
+
+STRETCH + FOAM ROLL
+
+GO TO STATION 2
+
+The task name should be significantly larger than it currently is.
+
+The primary goal is that I can open my phone and immediately understand:
+
+"What am I supposed to do right now?"
+
+Avoid showing unnecessary information on this screen.
+
+---
+
+# 7. UPDATE THE ACTIVE TASK SCREEN LAYOUT
+
+Use this hierarchy:
+
+TOP:
+
+[IN PROGRESS]
+
+CENTER:
+
+Large task icon
+
+STRETCH
++
+FOAM ROLL
+
+Below:
+
+09:32
+
+Remaining
+
+Below:
+
++5 MIN     +10 MIN     +30 MIN
+
+Below:
+
+📱 PARK YOUR PHONE
+
+Leave your phone here and do your task.
+
+At the bottom:
+
+RETURN & SCAN
+
+Scan the SAME NFC tag again when you finish.
+
+There should be NO Done button.
+
+---
+
+# 8. COMPLETION SCREEN
+
+When the same NFC tag is scanned for the second time:
+
+Immediately mark the task as COMPLETED.
+
+Show a brief completion state:
+
+✓
+
+COMPLETE
+
+STRETCH + FOAM ROLL
+
+Then automatically transition to:
+
+NEXT
+
+🪥 WASH FACE + BRUSH TEETH
+
+GO TO STATION 3
+
+The user should not need to tap anything after completing the NFC scan.
+
+---
+
+# 9. NFC STATE LOGIC
+
+Make sure the logic works exactly like this:
+
+CHECKPOINT = WAITING
+
+First NFC scan:
+
+→ CHECKPOINT = IN_PROGRESS
+→ Start timer
+→ Show active task screen
+
+CHECKPOINT = IN_PROGRESS
+
+Second NFC scan:
+
+→ CHECKPOINT = COMPLETED
+→ Stop timer
+→ Record completion time
+→ Show completion briefly
+→ Move to next checkpoint
+
+The same NFC tag must be used for both actions.
+
+Do not add a Done button.
+
+Do not add a Start button.
+
+The NFC scan is the action.
+
+---
+
+# 10. PRESERVE EXISTING FEATURES
+
+Do NOT remove or break the existing functionality.
+
+Keep:
+
+* 10 checkpoint system
+* NFC tag registration architecture
+* Simulation Mode
+* One-tag start/complete logic
+* Missed checkpoint tracking
+* Full / Reduced / Survival modes
+* Freeze intervention system
+* History
+* Settings
+* Event log
+* Future Capacitor/Android architecture
+
+Only modify the UI and interaction behavior described above.
+
+---
+
+# 11. IMPORTANT DESIGN PRINCIPLE
+
+This app is designed specifically for someone with executive dysfunction.
+
+The user should have to make as few decisions as possible.
+
+When a task starts:
+
+The user should NOT have to:
+
+* Press Start
+* Press Done
+* Choose a duration
+* Think about what to do next
+* Navigate through menus
+
+The intended flow is:
+
+SCAN
+
+↓
+
+TASK AUTOMATICALLY STARTS
+
+↓
+
+TIMER AUTOMATICALLY STARTS
+
+↓
+
+PARK PHONE
+
+↓
+
+LEAVE PHONE
+
+↓
+
+DO TASK
+
+↓
+
+RETURN
+
+↓
+
+SCAN SAME NFC TAG
+
+↓
+
+TASK AUTOMATICALLY COMPLETES
+
+↓
+
+NEXT TASK AUTOMATICALLY APPEARS
+
+The only optional interaction during the task is:
+
++5 MIN
++10 MIN
++30 MIN
+
+These buttons exist only if I need more time.
+
+Please implement these changes directly in the existing application and make sure the UI is optimized for a mobile phone screen, with the active task name and next task name being much larger and easier to read than they currently are.

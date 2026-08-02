@@ -17,4 +17,5 @@ export const SessionActionInputAction = {
   cancel: 'cancel',
   complete_anyway: 'complete_anyway',
   continue: 'continue',
+  extend_time: 'extend_time',
 } as const;

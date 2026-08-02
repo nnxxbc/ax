@@ -219,11 +219,14 @@ export const SessionActionInputAction = {
   cancel: 'cancel',
   complete_anyway: 'complete_anyway',
   continue: 'continue',
+  extend_time: 'extend_time',
 } as const;
 
 export interface SessionActionInput {
   action: SessionActionInputAction;
   reason?: string;
+  /** Minutes to add to the current session target (used with extend_time action) */
+  additionalMinutes?: number;
 }
 
 export interface DayHistory {
