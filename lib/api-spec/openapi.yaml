@@ -462,6 +462,9 @@ components:
           type: array
           items:
             type: string
+        completeOnFirstScan:
+          type: boolean
+          description: When true, the first NFC scan both starts and completes this checkpoint
         nfcTagId:
           type: ["integer", "null"]
         createdAt:
@@ -487,6 +490,8 @@ components:
           type: number
         isActive:
           type: boolean
+        completeOnFirstScan:
+          type: boolean
         energyModes:
           type: array
           items:
@@ -510,6 +515,8 @@ components:
         minDurationMinutes:
           type: number
         isActive:
+          type: boolean
+        completeOnFirstScan:
           type: boolean
         energyModes:
           type: array
@@ -737,6 +744,9 @@ components:
           type: number
         freezeEscalationDelayMinutes:
           type: number
+        freezeStuckThresholdSeconds:
+          type: number
+          description: Seconds of inactivity on the waiting screen before freeze intervention triggers
         strictModeEnabled:
           type: boolean
         notificationsEnabled:
@@ -763,6 +773,8 @@ components:
         freezeInterventionDelayMinutes:
           type: number
         freezeEscalationDelayMinutes:
+          type: number
+        freezeStuckThresholdSeconds:
           type: number
         strictModeEnabled:
           type: boolean

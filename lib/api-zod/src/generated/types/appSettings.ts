@@ -14,6 +14,8 @@ export interface AppSettings {
   alarmEnabled?: boolean;
   freezeInterventionDelayMinutes?: number;
   freezeEscalationDelayMinutes?: number;
+  /** Seconds of inactivity on the waiting screen before freeze intervention triggers */
+  freezeStuckThresholdSeconds?: number;
   strictModeEnabled?: boolean;
   notificationsEnabled?: boolean;
   vibrationEnabled?: boolean;

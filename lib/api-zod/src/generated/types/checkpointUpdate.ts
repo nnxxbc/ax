@@ -15,5 +15,6 @@ export interface CheckpointUpdate {
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;
+  completeOnFirstScan?: boolean;
   energyModes?: string[];
 }

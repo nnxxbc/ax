@@ -26,6 +26,8 @@ export interface Checkpoint {
   minDurationMinutes?: number;
   isActive: boolean;
   energyModes: string[];
+  /** When true, the first NFC scan both starts and completes this checkpoint */
+  completeOnFirstScan?: boolean;
   /** @nullable */
   nfcTagId?: number | null;
   createdAt: string;
@@ -40,6 +42,7 @@ export interface CheckpointInput {
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;
+  completeOnFirstScan?: boolean;
   energyModes?: string[];
 }
 
@@ -52,6 +55,7 @@ export interface CheckpointUpdate {
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;
+  completeOnFirstScan?: boolean;
   energyModes?: string[];
 }
 
@@ -257,6 +261,8 @@ export interface AppSettings {
   alarmEnabled?: boolean;
   freezeInterventionDelayMinutes?: number;
   freezeEscalationDelayMinutes?: number;
+  /** Seconds of inactivity on the waiting screen before freeze intervention triggers */
+  freezeStuckThresholdSeconds?: number;
   strictModeEnabled?: boolean;
   notificationsEnabled?: boolean;
   vibrationEnabled?: boolean;
@@ -280,6 +286,7 @@ export interface AppSettingsUpdate {
   alarmEnabled?: boolean;
   freezeInterventionDelayMinutes?: number;
   freezeEscalationDelayMinutes?: number;
+  freezeStuckThresholdSeconds?: number;
   strictModeEnabled?: boolean;
   notificationsEnabled?: boolean;
   vibrationEnabled?: boolean;

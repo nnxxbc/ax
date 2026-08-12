@@ -95,6 +95,41 @@ export function Settings() {
           </CardContent>
         </Card>
 
+        <h2 className="px-2 text-sm font-semibold tracking-widest text-muted-foreground uppercase mt-6 mb-2">Freeze Intervention</h2>
+        <Card className="shadow-sm border-border/40">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                <Clock size={18} className="text-muted-foreground" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-sm">Stuck detection</p>
+                <p className="text-xs text-muted-foreground">Show intervention after this many seconds on the waiting screen</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {[0, 15, 30, 60, 90, 120, 180, 300].map(s => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    updateSettings.mutate(
+                      { data: { freezeStuckThresholdSeconds: s } as any },
+                      { onSuccess: () => queryClient.setQueryData(getGetSettingsQueryKey(), (old: any) => ({ ...old, freezeStuckThresholdSeconds: s })) }
+                    );
+                  }}
+                  className={`rounded-2xl py-3 text-sm font-semibold transition-all active:scale-95 ${
+                    (settings.freezeStuckThresholdSeconds ?? 30) === s
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {s === 0 ? "Off" : s < 60 ? `${s}s` : `${s / 60}m`}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <h2 className="px-2 text-sm font-semibold tracking-widest text-muted-foreground uppercase mt-6 mb-2">Advanced</h2>
         <Card className="shadow-sm border-border/40">
           <CardContent className="p-0">

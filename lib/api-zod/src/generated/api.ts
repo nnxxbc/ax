@@ -30,6 +30,7 @@ export const ListCheckpointsResponseItem = zod.object({
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
   "energyModes": zod.array(zod.string()),
+  "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -48,6 +49,7 @@ export const CreateCheckpointBody = zod.object({
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean().optional(),
+  "completeOnFirstScan": zod.boolean().optional(),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -62,6 +64,7 @@ export const CreateCheckpointResponse = zod.object({
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
   "energyModes": zod.array(zod.string()),
+  "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -85,6 +88,7 @@ export const GetCheckpointResponse = zod.object({
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
   "energyModes": zod.array(zod.string()),
+  "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -106,6 +110,7 @@ export const UpdateCheckpointBody = zod.object({
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean().optional(),
+  "completeOnFirstScan": zod.boolean().optional(),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -120,6 +125,7 @@ export const UpdateCheckpointResponse = zod.object({
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
   "energyModes": zod.array(zod.string()),
+  "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -482,6 +488,7 @@ export const GetSettingsResponse = zod.object({
   "alarmEnabled": zod.boolean().optional(),
   "freezeInterventionDelayMinutes": zod.number().optional(),
   "freezeEscalationDelayMinutes": zod.number().optional(),
+  "freezeStuckThresholdSeconds": zod.number().optional().describe('Seconds of inactivity on the waiting screen before freeze intervention triggers'),
   "strictModeEnabled": zod.boolean().optional(),
   "notificationsEnabled": zod.boolean().optional(),
   "vibrationEnabled": zod.boolean().optional(),
@@ -500,6 +507,7 @@ export const UpdateSettingsBody = zod.object({
   "alarmEnabled": zod.boolean().optional(),
   "freezeInterventionDelayMinutes": zod.number().optional(),
   "freezeEscalationDelayMinutes": zod.number().optional(),
+  "freezeStuckThresholdSeconds": zod.number().optional(),
   "strictModeEnabled": zod.boolean().optional(),
   "notificationsEnabled": zod.boolean().optional(),
   "vibrationEnabled": zod.boolean().optional(),
@@ -515,6 +523,7 @@ export const UpdateSettingsResponse = zod.object({
   "alarmEnabled": zod.boolean().optional(),
   "freezeInterventionDelayMinutes": zod.number().optional(),
   "freezeEscalationDelayMinutes": zod.number().optional(),
+  "freezeStuckThresholdSeconds": zod.number().optional().describe('Seconds of inactivity on the waiting screen before freeze intervention triggers'),
   "strictModeEnabled": zod.boolean().optional(),
   "notificationsEnabled": zod.boolean().optional(),
   "vibrationEnabled": zod.boolean().optional(),

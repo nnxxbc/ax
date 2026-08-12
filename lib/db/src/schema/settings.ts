@@ -8,6 +8,8 @@ export const settingsTable = pgTable("settings", {
   alarmEnabled: boolean("alarm_enabled").notNull().default(false),
   freezeInterventionDelayMinutes: integer("freeze_intervention_delay_minutes").notNull().default(5),
   freezeEscalationDelayMinutes: integer("freeze_escalation_delay_minutes").notNull().default(3),
+  // Seconds of inactivity on the waiting screen before freeze intervention triggers
+  freezeStuckThresholdSeconds: integer("freeze_stuck_threshold_seconds").notNull().default(30),
   strictModeEnabled: boolean("strict_mode_enabled").notNull().default(false),
   notificationsEnabled: boolean("notifications_enabled").notNull().default(true),
   vibrationEnabled: boolean("vibration_enabled").notNull().default(true),

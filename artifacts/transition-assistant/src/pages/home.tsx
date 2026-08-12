@@ -1,13 +1,19 @@
 import { useEffect, useState, useRef } from "react";
 import {
   useGetTodayRoutine,
+  useGetSettings,
   useStartTodayRoutine,
   getGetTodayRoutineQueryKey,
   getGetTodaySummaryQueryKey,
+  getGetSettingsQueryKey,
   useSessionAction,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Battery, BatteryMedium, BatteryWarning, CheckCircle2, MapPin, Smartphone, Plus } from "lucide-react";
+import {
+  Battery, BatteryMedium, BatteryWarning, CheckCircle2,
+  MapPin, Smartphone, Plus, ChevronDown, ChevronUp,
+  Circle, CheckCircle, XCircle, SkipForward, AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 
@@ -20,6 +26,125 @@ function fmtTime(secs: number) {
   return `${m.toString().padStart(2, "0")}:${r.toString().padStart(2, "0")}`;
 }
 
+function statusIcon(status: string) {
+  switch (status) {
+    case "completed": return <CheckCircle size={14} className="text-primary shrink-0" />;
+    case "in_progress": return <Circle size={14} className="text-primary shrink-0 animate-pulse" />;
+    case "skipped": return <SkipForward size={14} className="text-muted-foreground shrink-0" />;
+    case "missed": return <XCircle size={14} className="text-destructive shrink-0" />;
+    default: return <Circle size={14} className="text-border shrink-0" />;
+  }
+}
+
+// ─── Compact routine overview ─────────────────────────────────────────────────
+
+function RoutineOverview({ sessions }: { sessions: any[] }) {
+  const [open, setOpen] = useState(false);
+  const sorted = [...sessions].sort((a, b) => a.order - b.order);
+  const doneCount = sessions.filter(s => ["completed", "skipped"].includes(s.status)).length;
+
+  return (
+    <div className="border-t border-border/50 bg-card/50">
+      <button
+        className="w-full flex items-center justify-between px-5 py-3 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="font-semibold uppercase tracking-widest">
+          Routine · {doneCount}/{sessions.length}
+        </span>
+        {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-0.5 animate-in slide-in-from-bottom-2 duration-200">
+          {sorted.map(s => (
+            <div
+              key={s.id}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-xl ${
+                s.status === "in_progress" ? "bg-primary/10" : ""
+              }`}
+            >
+              {statusIcon(s.status)}
+              <span
+                className={`text-sm font-medium flex-1 truncate ${
+                  s.status === "completed" || s.status === "skipped"
+                    ? "line-through text-muted-foreground/50"
+                    : s.status === "in_progress"
+                    ? "text-primary"
+                    : "text-foreground"
+                }`}
+              >
+                {s.checkpointName}
+              </span>
+              {s.targetDurationMinutes != null && s.targetDurationMinutes > 0 && s.status === "waiting" && (
+                <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                  {s.targetDurationMinutes < 1
+                    ? `${Math.round(s.targetDurationMinutes * 60)}s`
+                    : `${s.targetDurationMinutes}m`}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Freeze intervention overlay ──────────────────────────────────────────────
+
+const FREEZE_REASONS = [
+  { key: "tired",       label: "I'M TIRED",       response: "Let's make the next step smaller." },
+  { key: "overwhelmed", label: "I'M OVERWHELMED",  response: "Forget the whole task. Just move to the station." },
+  { key: "distracted",  label: "I'M DISTRACTED",   response: "Put your phone on the station." },
+  { key: "unknown",     label: "I DON'T KNOW",     response: "Just stand up." },
+] as const;
+
+function FreezeOverlay({ onDismiss }: { onDismiss: () => void }) {
+  const [response, setResponse] = useState<string | null>(null);
+
+  if (response) {
+    return (
+      <div className="absolute inset-0 z-30 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center px-8 text-center animate-in fade-in duration-300">
+        <p className="text-2xl font-semibold tracking-tight mb-6">{response}</p>
+        <button
+          className="text-sm text-muted-foreground underline underline-offset-4"
+          onClick={onDismiss}
+        >
+          Got it
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 z-30 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center px-8 text-center animate-in fade-in duration-300">
+      <AlertCircle size={40} className="text-muted-foreground mb-6" strokeWidth={1.5} />
+      <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-muted-foreground mb-2">Still here?</p>
+      <p className="text-lg text-foreground mb-8">What's making this difficult?</p>
+
+      <div className="flex flex-col gap-3 w-full max-w-xs">
+        {FREEZE_REASONS.map(r => (
+          <button
+            key={r.key}
+            onClick={() => setResponse(r.response)}
+            className="bg-muted hover:bg-muted/80 active:scale-[0.98] transition-all rounded-2xl px-4 py-4 text-sm font-bold tracking-wide text-foreground"
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <button
+        className="mt-6 text-xs text-muted-foreground/60 underline underline-offset-4"
+        onClick={onDismiss}
+      >
+        I'm fine, close this
+      </button>
+    </div>
+  );
+}
+
 // ─── Home ─────────────────────────────────────────────────────────────────────
 
 export function Home() {
@@ -27,21 +152,20 @@ export function Home() {
   const { data: routine, isLoading } = useGetTodayRoutine({
     query: { queryKey: getGetTodayRoutineQueryKey(), refetchInterval: 3000 },
   });
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const startRoutine = useStartTodayRoutine();
 
-  // track flash when a session completes
   const [completedName, setCompletedName] = useState<string | null>(null);
   const prevInProgressRef = useRef<any>(null);
 
   const inProgressSession = routine?.sessions?.find((s: any) => s.status === "in_progress");
   const nextSession = routine?.sessions?.find((s: any) => s.status === "waiting");
 
-  // detect transition: in_progress → gone → show flash
   useEffect(() => {
     const prev = prevInProgressRef.current;
     if (prev && !inProgressSession) {
       setCompletedName(prev.checkpointName ?? "Station");
-      const t = setTimeout(() => setCompletedName(null), 2000);
+      const t = setTimeout(() => setCompletedName(null), 1800);
       return () => clearTimeout(t);
     }
     prevInProgressRef.current = inProgressSession ?? null;
@@ -68,25 +192,25 @@ export function Home() {
     );
   }
 
-  // brief completion flash
+  // Completion flash
   if (completedName) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300 text-center bg-primary/5">
         <div className="w-28 h-28 bg-primary/10 rounded-full flex items-center justify-center mb-6">
           <CheckCircle2 size={56} className="text-primary" strokeWidth={1.5} />
         </div>
-        <p className="text-sm font-bold tracking-widest uppercase text-muted-foreground mb-2">Complete</p>
-        <h2 className="text-3xl font-semibold tracking-tight">{completedName}</h2>
+        <p className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground mb-3">Complete</p>
+        <h2 className="text-3xl font-bold tracking-tight">{completedName}</h2>
       </div>
     );
   }
 
-  // no routine / abandoned → energy mode picker
+  // No routine → energy picker
   if (!routine || routine.status === "abandoned") {
     return <EnergyPicker onStart={handleStart} isPending={startRoutine.isPending} />;
   }
 
-  // routine completed
+  // Routine completed
   if (routine.status === "completed") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -95,30 +219,36 @@ export function Home() {
         </div>
         <h2 className="text-3xl font-semibold mb-2">All done.</h2>
         <p className="text-muted-foreground">You can rest now.</p>
-        <button
-          className="mt-12 text-sm text-muted-foreground underline underline-offset-4"
-          onClick={() => handleStart("full")}
-        >
+        <button className="mt-12 text-sm text-muted-foreground underline underline-offset-4" onClick={() => handleStart("full")}>
           Restart routine
         </button>
       </div>
     );
   }
 
+  const freezeThreshold = settings?.freezeStuckThresholdSeconds ?? 30;
+
   if (inProgressSession) {
-    return <InProgressView session={inProgressSession} />;
+    return (
+      <div className="flex-1 flex flex-col">
+        <InProgressView session={inProgressSession} />
+        {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+      </div>
+    );
   }
 
   if (nextSession) {
-    return <WaitingView session={nextSession} />;
+    return (
+      <div className="flex-1 flex flex-col">
+        <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} />
+        {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+      </div>
+    );
   }
 
-  // active routine, all sessions done / empty
-  const allDone =
-    routine.sessions.length > 0 &&
-    routine.sessions.every((s: any) =>
-      ["completed", "skipped", "missed", "cancelled"].includes(s.status)
-    );
+  // Active routine but empty/all done
+  const allDone = routine.sessions.length > 0 &&
+    routine.sessions.every((s: any) => ["completed", "skipped", "missed", "cancelled"].includes(s.status));
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -126,9 +256,7 @@ export function Home() {
         <CheckCircle2 size={48} className="text-primary" strokeWidth={1.5} />
       </div>
       <h2 className="text-3xl font-semibold mb-2">{allDone ? "All done." : "Ready to start?"}</h2>
-      <p className="text-muted-foreground">
-        {allDone ? "You can rest now." : "Choose how much energy you have today."}
-      </p>
+      <p className="text-muted-foreground">{allDone ? "You can rest now." : "Choose how much energy you have today."}</p>
       {!allDone && (
         <div className="flex flex-col gap-3 w-full mt-10">
           <EnergyCard title="Full Energy" desc="All stations active." icon={Battery} color="bg-primary/10 text-primary" onClick={() => handleStart("full")} disabled={startRoutine.isPending} />
@@ -183,41 +311,49 @@ function EnergyCard({ title, desc, icon: Icon, color, onClick, disabled }: any) 
 
 // ─── Waiting view ─────────────────────────────────────────────────────────────
 
-function WaitingView({ session }: { session: any }) {
+function WaitingView({ session, freezeThresholdSeconds }: { session: any; freezeThresholdSeconds: number }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
+  const [elapsed, setElapsed] = useState(0);
+  const [freezeDismissed, setFreezeDismissed] = useState(false);
+
+  // Reset freeze dismissed state when session changes
+  useEffect(() => { setFreezeDismissed(false); setElapsed(0); }, [session.id]);
+
+  // Count seconds on this waiting screen
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [session.id]);
+
+  const showFreeze = !freezeDismissed && elapsed >= freezeThresholdSeconds && freezeThresholdSeconds > 0;
 
   const handleSkip = () => {
-    sessionAction.mutate(
-      { id: session.id, data: { action: "skip" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
-          toast("Station skipped.");
-        },
-      }
-    );
+    sessionAction.mutate({ id: session.id, data: { action: "skip" } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+        toast("Station skipped.");
+      },
+    });
   };
 
-  // For simulation fallback: start manually
   const handleStartManual = () => {
-    sessionAction.mutate(
-      { id: session.id, data: { action: "start" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
-        },
-      }
-    );
+    sessionAction.mutate({ id: session.id, data: { action: "start" } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+      },
+    });
   };
 
   const name: string = session.checkpointName ?? "Station";
   const parts = name.split(/\s*\+\s*/);
 
   return (
-    <div className="flex-1 flex flex-col animate-in slide-in-from-bottom-4 duration-500">
+    <div className="flex-1 flex flex-col animate-in slide-in-from-bottom-4 duration-500 relative">
+      {showFreeze && <FreezeOverlay onDismiss={() => setFreezeDismissed(true)} />}
+
       {/* status pill */}
       <div className="flex justify-center pt-8 pb-2">
         <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-muted-foreground bg-muted px-4 py-1.5 rounded-full">
@@ -225,7 +361,7 @@ function WaitingView({ session }: { session: any }) {
         </span>
       </div>
 
-      {/* main content — centred */}
+      {/* main content */}
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
         {/* icon */}
         <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mb-6">
@@ -233,7 +369,7 @@ function WaitingView({ session }: { session: any }) {
         </div>
 
         {/* station name — very large */}
-        <h1 className="text-5xl font-bold tracking-tight leading-none mb-6">
+        <h1 className="font-bold tracking-tight leading-none mb-6" style={{ fontSize: "clamp(2.8rem, 13vw, 4.5rem)" }}>
           {parts.map((part, i) => (
             <span key={i}>
               {i > 0 && <span className="block text-3xl text-muted-foreground font-light my-1">+</span>}
@@ -244,7 +380,7 @@ function WaitingView({ session }: { session: any }) {
 
         {/* location */}
         {session.checkpointLocation && (
-          <div className="flex items-center gap-1.5 text-muted-foreground text-sm mb-8">
+          <div className="flex items-center gap-1.5 text-muted-foreground text-sm mb-6">
             <MapPin size={14} />
             <span>{session.checkpointLocation}</span>
           </div>
@@ -257,20 +393,12 @@ function WaitingView({ session }: { session: any }) {
       </div>
 
       {/* subtle simulation fallback */}
-      <div className="flex items-center justify-center gap-6 pb-8 pt-4">
-        <button
-          className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60"
-          onClick={handleStartManual}
-          disabled={sessionAction.isPending}
-        >
+      <div className="flex items-center justify-center gap-6 pb-6 pt-3">
+        <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleStartManual} disabled={sessionAction.isPending}>
           Start without NFC
         </button>
         <span className="text-muted-foreground/40">·</span>
-        <button
-          className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60"
-          onClick={handleSkip}
-          disabled={sessionAction.isPending}
-        >
+        <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleSkip} disabled={sessionAction.isPending}>
           Skip this one
         </button>
       </div>
@@ -283,12 +411,11 @@ function WaitingView({ session }: { session: any }) {
 function InProgressView({ session }: { session: any }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
+  // targetDurationMinutes may be decimal (e.g. 0.5 = 30s)
   const targetMins: number = session.targetDurationMinutes ?? session.defaultDurationMinutes ?? 0;
   const minMins: number = session.minDurationMinutes ?? 0;
 
-  // local added-minutes (optimistic before API confirms)
   const [addedMins, setAddedMins] = useState(0);
-  // elapsed seconds
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -299,37 +426,31 @@ function InProgressView({ session }: { session: any }) {
     return () => clearInterval(id);
   }, [session.startedAt]);
 
-  // reset added mins when session changes
   useEffect(() => { setAddedMins(0); }, [session.id]);
 
   const totalTargetSecs = (targetMins + addedMins) * 60;
   const isZeroDuration = targetMins === 0 && addedMins === 0;
-
-  // if target is 0, count UP; otherwise count DOWN
   const displaySecs = isZeroDuration ? elapsed : Math.max(0, totalTargetSecs - elapsed);
   const countingDown = !isZeroDuration;
   const minElapsed = elapsed >= minMins * 60;
-  const targetReached = isZeroDuration ? true : elapsed >= totalTargetSecs;
+  const targetReached = isZeroDuration ? false : elapsed >= totalTargetSecs;
   const showReturnScan = minElapsed || targetReached;
 
   const handleExtend = (mins: number) => {
-    setAddedMins((prev) => prev + mins);
+    setAddedMins(prev => prev + mins);
     sessionAction.mutate(
       { id: session.id, data: { action: "extend_time", additionalMinutes: mins } },
-      { onError: () => setAddedMins((prev) => prev - mins) }
+      { onError: () => setAddedMins(prev => prev - mins) }
     );
   };
 
   const handleCompleteManual = () => {
-    sessionAction.mutate(
-      { id: session.id, data: { action: "complete" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
-        },
-      }
-    );
+    sessionAction.mutate({ id: session.id, data: { action: "complete" } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+      },
+    });
   };
 
   const name: string = session.checkpointName ?? "Station";
@@ -337,14 +458,13 @@ function InProgressView({ session }: { session: any }) {
 
   return (
     <div className="flex-1 flex flex-col animate-in fade-in duration-500 bg-primary/[0.03]">
-      {/* top status pill */}
+      {/* status pill */}
       <div className="flex justify-center pt-8 pb-2">
         <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-primary bg-primary/10 px-4 py-1.5 rounded-full">
           In Progress
         </span>
       </div>
 
-      {/* main scrollable content */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
         {/* icon */}
         <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
@@ -352,7 +472,7 @@ function InProgressView({ session }: { session: any }) {
         </div>
 
         {/* task name — DOMINANT */}
-        <h1 className="text-5xl font-extrabold tracking-tight leading-none mb-8" style={{ fontSize: "clamp(2.5rem, 12vw, 4.5rem)" }}>
+        <h1 className="font-extrabold tracking-tight leading-none mb-8" style={{ fontSize: "clamp(2.5rem, 12vw, 4.5rem)" }}>
           {parts.map((part, i) => (
             <span key={i} className="block">
               {i > 0 && <span className="block text-2xl text-muted-foreground font-normal my-1">+</span>}
@@ -362,18 +482,30 @@ function InProgressView({ session }: { session: any }) {
         </h1>
 
         {/* timer */}
-        <div className="mb-2">
-          <span className="font-light tabular-nums text-primary" style={{ fontSize: "clamp(3.5rem, 16vw, 6rem)", lineHeight: 1 }}>
-            {fmtTime(displaySecs)}
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground mb-6">
-          {countingDown ? (targetReached ? "Time's up" : "Remaining") : "Elapsed"}
-        </p>
+        {targetReached ? (
+          <div className="mb-6 text-center">
+            <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-1">Time's Up</p>
+            <p className="font-light tabular-nums text-muted-foreground" style={{ fontSize: "clamp(3rem, 14vw, 5rem)", lineHeight: 1 }}>
+              {fmtTime(elapsed)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Continue until you're ready.</p>
+          </div>
+        ) : (
+          <div className="mb-2">
+            <span className="font-light tabular-nums text-primary" style={{ fontSize: "clamp(3.5rem, 16vw, 6rem)", lineHeight: 1 }}>
+              {fmtTime(displaySecs)}
+            </span>
+          </div>
+        )}
+        {!targetReached && (
+          <p className="text-sm text-muted-foreground mb-6">
+            {countingDown ? "Remaining" : "Elapsed"}
+          </p>
+        )}
 
         {/* +time buttons */}
-        <div className="flex gap-3 mb-10">
-          {[5, 10, 30].map((m) => (
+        <div className="flex gap-3 mb-8">
+          {[5, 10, 30].map(m => (
             <button
               key={m}
               onClick={() => handleExtend(m)}
@@ -404,8 +536,8 @@ function InProgressView({ session }: { session: any }) {
         </div>
       </div>
 
-      {/* manual complete fallback — very subtle */}
-      <div className="flex justify-center pb-8 pt-4">
+      {/* manual complete fallback */}
+      <div className="flex justify-center pb-6 pt-3">
         <button
           className="text-xs text-muted-foreground/60 underline underline-offset-4 active:opacity-60"
           onClick={handleCompleteManual}

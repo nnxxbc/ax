@@ -19,6 +19,8 @@ export interface Checkpoint {
   minDurationMinutes?: number;
   isActive: boolean;
   energyModes: string[];
+  /** When true, the first NFC scan both starts and completes this checkpoint */
+  completeOnFirstScan?: boolean;
   /** @nullable */
   nfcTagId?: number | null;
   createdAt: string;

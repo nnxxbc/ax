@@ -1,0 +1,1052 @@
+I need you to modify the EXISTING Physical Transition Assistant application.
+
+IMPORTANT:
+DO NOT rebuild the application from scratch.
+DO NOT replace the existing design system.
+DO NOT remove working features.
+DO NOT create a fake NFC implementation and call it real NFC.
+
+Inspect the existing codebase first and understand:
+- current React structure
+- current state management
+- database/schema
+- current routing/navigation
+- current station model
+- current timer implementation
+- current simulation implementation
+- current settings implementation
+- current history implementation
+- current insights implementation
+
+Then make the changes below while preserving the existing application wherever possible.
+
+==================================================
+PRODUCT PURPOSE
+==================================================
+
+This application is a Physical Transition Assistant.
+
+It is designed for a person who often knows exactly what needs to be done but has difficulty transitioning physically into action.
+
+The problem is especially:
+- lying in bed → getting up
+- room → room
+- intention → physical movement
+- phone → task
+- one task → another task
+- having many things to do → knowing where to start
+- continuing a physical task once started
+- becoming stuck/frozen during transitions
+
+The product should reduce cognitive load.
+
+Core principle:
+
+"Don't think about the whole day.
+Just move to the next station."
+
+The application should feel like an external mind:
+- clear
+- direct
+- minimal
+- predictable
+- adaptable
+- non-shaming
+- not emotionally intense
+- not overly verbose
+
+It should tell the user the next physical action.
+
+==================================================
+CURRENT APPLICATION
+==================================================
+
+The current application already has:
+
+- Home / Next Stop
+- station/routine configuration
+- NFC Simulator
+- History
+- Insights
+- Settings
+- station configuration
+- Full / Reduced / Survival modes
+- timer settings
+- notification settings
+- NFC Tag Manager placeholder
+- developer mode
+
+KEEP THESE FEATURES.
+
+The current visual design is already close to the desired aesthetic.
+
+Do not redesign the application unnecessarily.
+
+==================================================
+1. HOME / NEXT STOP
+==================================================
+
+The Home screen should show the entire routine in the system, but the PRIMARY focus must remain the next action.
+
+The user has specifically said:
+
+"I need to see the whole routine. It's the basic maintenance."
+
+Therefore:
+
+- Keep the next station extremely prominent.
+- Allow the complete routine to remain visible/accessibly viewable below or through a compact routine view.
+- Do NOT create an overwhelming giant task list as the primary visual.
+- The next station must always be obvious.
+
+Example:
+
+NEXT STOP
+
+OUT OF BED
+
+Upstairs near the desk
+
+Go to this station and scan your NFC tag.
+
+The task name must remain large.
+
+==================================================
+2. ACTIVE TASK SCREEN
+==================================================
+
+The active task screen is critical.
+
+The current task name is already reasonably large, but make it the dominant element.
+
+Hierarchy:
+
+1. IN PROGRESS status
+2. VERY LARGE TASK NAME
+3. Timer
+4. +5 / +10 / +30 buttons
+5. Phone parking instruction
+6. RETURN & SCAN instruction
+
+Example:
+
+IN PROGRESS
+
+STRETCH
++
+FOAM ROLL
+
+09:32
+
++5 MIN     +10 MIN     +30 MIN
+
+PARK YOUR PHONE
+
+Leave it here and do the task.
+
+RETURN & SCAN
+
+Scan the SAME NFC tag again when you finish.
+
+The user should understand the screen in less than one second.
+
+==================================================
+3. REMOVE DONE BUTTON
+==================================================
+
+There must be NO "Done" button.
+
+There must be NO manual completion button during normal operation.
+
+Completion happens ONLY through the second scan of the same NFC tag.
+
+Normal state machine:
+
+WAITING
+→ first NFC scan
+→ IN_PROGRESS
+→ second scan of SAME NFC tag
+→ COMPLETED
+
+Do not introduce another confirmation step.
+
+==================================================
+4. STARTING A TASK
+==================================================
+
+There must be NO Start button.
+
+First scan automatically starts the task.
+
+When the correct NFC tag is scanned:
+
+1. identify checkpoint
+2. verify it is the current expected checkpoint OR an explicitly allowed missed checkpoint
+3. change state to IN_PROGRESS
+4. record start timestamp
+5. start timer automatically
+6. show active task screen
+7. instruct user to park phone
+8. allow user to leave phone
+
+Do not ask unnecessary questions.
+
+==================================================
+5. COMPLETING A TASK
+==================================================
+
+When the SAME NFC tag is scanned again:
+
+1. recognize the tag
+2. verify it corresponds to the currently active checkpoint
+3. stop timer
+4. record completion timestamp
+5. calculate actual elapsed duration
+6. record any added time
+7. mark checkpoint COMPLETED
+8. save event
+9. immediately determine next checkpoint
+10. show NEXT STOP
+
+No Done button.
+
+No confirmation modal unless absolutely necessary for error prevention.
+
+==================================================
+6. TIMER BEHAVIOR
+==================================================
+
+Default duration belongs to the checkpoint configuration.
+
+Examples:
+
+Out of Bed:
+30 seconds by default
+
+Stretch + Foam Roll:
+10 minutes
+
+Hygiene:
+5 minutes
+
+Shower:
+10 minutes
+
+Clean First Floor:
+15 minutes
+
+Clean Second Floor:
+15 minutes
+
+Take Trash Out:
+5 minutes
+
+Work at Desk:
+25 minutes
+
+Drink Water:
+No timer
+
+Go to Gym:
+60 minutes
+
+IMPORTANT:
+Out of Bed should no longer be treated simply as "No timer".
+
+Its default should be configurable, with:
+
+DEFAULT = 30 seconds
+
+The purpose is not to force the user to stay at the station for 30 seconds.
+
+The purpose is to provide a small transition window and external structure.
+
+==================================================
+7. TIMER SHOULD COUNT DOWN
+==================================================
+
+The user prefers countdown timers.
+
+For timed tasks show:
+
+09:32
+
+rather than elapsed time.
+
+When a task begins:
+
+10:00
+
+Then:
+
+09:59
+09:58
+etc.
+
+For Out of Bed:
+
+00:30
+
+The timer should not automatically complete the task when it reaches zero.
+
+IMPORTANT:
+
+Timer reaching zero does NOT complete a task.
+
+The user still has to return and scan the SAME NFC tag.
+
+After reaching zero:
+
+show something like:
+
+TIME'S UP
+
+Continue until you're ready.
+
+RETURN & SCAN when finished.
+
+Do not make this feel like failure.
+
+==================================================
+8. ADD TIME ONLY
+==================================================
+
+During an active task, show:
+
++5 MIN
++10 MIN
++30 MIN
+
+These buttons can be pressed repeatedly.
+
+Example:
+
+10:00
+→ +10
+→ 20:00
+→ +5
+→ 25:00
+
+There must be NO way to subtract time.
+
+Do NOT add:
+-5
+-10
+-30
+reduce
+shorten
+
+The user must never be able to shorten the active timer.
+
+Temporary added time must NOT modify the permanent checkpoint default.
+
+Example:
+
+Default Stretch = 10 min
+
+Today's session:
+10 min + 10 min
+
+Permanent default remains:
+10 min
+
+Store:
+- defaultDuration
+- addedDuration
+- currentTargetDuration
+separately.
+
+==================================================
+9. TIMER ADJUSTMENT BEFORE STARTING
+==================================================
+
+The user wants control over default durations.
+
+Settings should make this extremely easy.
+
+Do NOT make the user enter seconds manually.
+
+Use quick presets:
+
+5 min
+10 min
+15 min
+20 min
+25 min
+30 min
+45 min
+60 min
+No timer
+
+For Out of Bed also support:
+
+10 sec
+15 sec
+30 sec
+45 sec
+60 sec
+
+DEFAULT:
+
+30 seconds.
+
+The user must always be able to manually change the permanent default.
+
+Changing a default affects FUTURE sessions only.
+
+It must not modify an already-active session.
+
+==================================================
+10. TIMER REACHES ZERO
+==================================================
+
+When timer reaches zero:
+
+DO NOT complete.
+
+DO NOT automatically advance.
+
+DO NOT mark missed.
+
+The physical task is what matters.
+
+The user can continue performing the task.
+
+Display:
+
+TIME'S UP
+
+Continue until you're finished.
+
+RETURN & SCAN
+
+The user decides when the task is actually complete by scanning.
+
+==================================================
+11. PHYSICAL TRANSITION
+==================================================
+
+The system should track:
+
+current station
+previous station
+next station
+active task
+start time
+completion time
+time spent
+added time
+missed state
+skipped state
+mode
+
+The primary goal is clean movement toward the next physical checkpoint.
+
+The app should not require the user to think through the entire routine.
+
+==================================================
+12. STATION ORDER
+==================================================
+
+Station order is important.
+
+The default routine:
+
+1. OUT OF BED
+Location: Upstairs near desk
+Default: 30 sec
+
+2. STRETCH + FOAM ROLL
+Location: Second floor
+Default: 10 min
+
+3. HYGIENE
+Location: Bathroom
+Default: 5 min
+
+4. SHOWER
+Location: Bathroom
+Default: 10 min
+
+5. CLEAN FIRST FLOOR
+Location: First floor
+Default: 15 min
+
+6. CLEAN SECOND FLOOR
+Location: Second floor
+Default: 15 min
+
+7. TAKE TRASH OUT
+Location: Near exterior door
+Default: 5 min
+
+8. WORK AT DESK
+Location: Desk
+Default: 25 min
+
+9. DRINK WATER
+Location: User-defined
+Default: No timer
+
+10. GO TO THE GYM
+Location: Departure point/home
+Default: 60 min
+
+The user must be able to reorder stations manually.
+
+Do NOT make the system rigid.
+
+==================================================
+13. MAIN TASK PRIORITY
+==================================================
+
+The user wants the system to prioritize main tasks.
+
+The routine can contain many maintenance tasks, but when adaptive decisions are necessary:
+
+MAIN TASKS > secondary tasks
+
+Do not let optional cleaning tasks prevent essential tasks.
+
+The system should distinguish:
+
+ESSENTIAL
+IMPORTANT
+OPTIONAL
+
+But keep this visually simple.
+
+Do not overwhelm the Home screen with priority labels.
+
+==================================================
+14. SKIPPING
+==================================================
+
+The user needs control.
+
+Skipping must remain available.
+
+The system should NEVER force the user to complete a task.
+
+However:
+
+Skip should not be the primary action.
+
+Use a simple one-tap choice:
+
+SKIP THIS ONE
+
+When skipped:
+
+- record timestamp
+- record reason if provided
+- do not delete it
+- move to next appropriate checkpoint
+- allow recovery later
+
+Do not use language such as:
+"You failed"
+"You missed your goal"
+"You should have..."
+
+Use neutral language.
+
+==================================================
+15. MISSED TASKS
+==================================================
+
+If a task was expected but not completed during its relevant period:
+
+mark:
+
+MISSED
+
+But do NOT remove it.
+
+A missed task remains recoverable later that day.
+
+The user should be able to choose:
+
+DO IT NOW
+
+or
+
+SKIP
+
+Keep recovery simple.
+
+==================================================
+16. ENERGY MODES
+==================================================
+
+Modes:
+
+FULL
+REDUCED
+SURVIVAL
+
+The user wants control over these.
+
+Do NOT automatically switch modes without user permission.
+
+The system may RECOMMEND a mode change, but must never silently change it.
+
+FULL:
+entire routine
+
+REDUCED:
+essential tasks + fewer secondary tasks
+
+SURVIVAL:
+minimum maintenance
+
+Example Survival:
+- Out of Bed
+- Hygiene
+- Water
+
+The user can manually change mode at any time.
+
+Changing mode should not destroy the underlying routine.
+
+It only changes what is currently prioritized.
+
+==================================================
+17. IMPORTANT: MODE ADAPTATION
+==================================================
+
+The system should prioritize essential/main tasks.
+
+If the user switches to Reduced or Survival:
+
+Do not delete or erase other tasks.
+
+Instead mark them as:
+Deferred / Not active in this mode
+
+This preserves the routine and history.
+
+When returning to Full Mode, the complete routine becomes available again.
+
+==================================================
+18. FREEZE / STUCK INTERVENTION
+==================================================
+
+The user wants an external mind that is:
+
+clear
+direct
+minimal
+persistent when useful
+not emotionally intense
+
+The system should detect when the user has remained at the current stage too long.
+
+Default stuck threshold:
+
+30 seconds
+
+BUT:
+
+make this configurable.
+
+The system should not constantly interrupt.
+
+It should only trigger when there is evidence that the user is stuck.
+
+When triggered:
+
+"STILL HERE?"
+
+"What's making this difficult?"
+
+One-tap choices:
+
+I'M TIRED
+I'M OVERWHELMED
+I'M DISTRACTED
+I DON'T KNOW
+
+Then respond:
+
+TIRED:
+"Let's make the next step smaller."
+
+OVERWHELMED:
+"Forget the whole task.
+Just move to the station."
+
+DISTRACTED:
+"Put your phone on the station."
+
+DON'T KNOW:
+"Just stand up."
+
+Do not create a long therapeutic conversation.
+
+The intervention exists to produce movement.
+
+==================================================
+19. FREEZE INTERVENTION SHOULD BE ADAPTIVE
+==================================================
+
+Record:
+- timestamp
+- station
+- selected reason
+- time stuck
+- mode
+- whether user subsequently completed the station
+
+Use this later for insights.
+
+Example insight:
+
+"Bed → Out of Bed is your most difficult transition."
+
+Keep insights actionable.
+
+==================================================
+20. PHYSICAL DISCOMFORT
+==================================================
+
+The system should allow the user to report physical discomfort.
+
+Possible quick selections:
+
+STIFFNESS
+DIZZINESS
+PRESSURE
+FATIGUE
+NAUSEA
+MILD DISCOMFORT
+
+This should be available from the active task screen or an unobtrusive intervention.
+
+IMPORTANT:
+
+Do NOT automatically make medical decisions.
+
+Do NOT diagnose.
+
+Do NOT create dramatic warnings.
+
+The purpose is simply to allow the user to communicate:
+
+"My body is making this transition harder."
+
+After a discomfort report:
+
+offer:
+
+ADAPT NEXT STEP
+
+or
+
+CONTINUE
+
+or
+
+SKIP
+
+The user remains in control.
+
+==================================================
+21. NIGHTMARE / UNSTABLE MORNING
+==================================================
+
+The user sometimes wakes after nightmares feeling unstable.
+
+Do NOT create a complicated morning questionnaire.
+
+The user should have a very simple optional morning choice:
+
+NORMAL
+or
+LOW CAPACITY
+
+If LOW CAPACITY is selected:
+
+recommend Reduced Mode.
+
+But do not force it.
+
+The user can still choose Full Mode.
+
+==================================================
+22. MORNING ROUTINE
+==================================================
+
+The user wants to manually choose the mode in the morning.
+
+Add a very lightweight morning selection:
+
+TODAY
+
+How much capacity do you have?
+
+FULL
+REDUCED
+SURVIVAL
+
+One tap.
+
+Do not require journaling.
+
+Do not require mood scoring.
+
+Do not make the user explain themselves.
+
+==================================================
+23. OUT OF BED
+==================================================
+
+This is one of the most important stations.
+
+The user often has difficulty simply leaving the bed.
+
+The system should treat:
+
+OUT OF BED
+
+as a physical transition checkpoint.
+
+Default timer:
+30 seconds
+
+The important success condition is:
+
+USER REACHES STATION 1
+
+The timer is secondary.
+
+When the user scans Station 1:
+
+start the checkpoint.
+
+When they scan Station 1 again:
+
+complete it.
+
+However, because this station represents "leaving bed", support a special setting:
+
+"Complete on first scan"
+
+OR
+
+"Require return scan"
+
+DEFAULT:
+
+Complete on first scan for Out of Bed.
+
+This should be configurable.
+
+Reason:
+
+Out of Bed is different from a physical task like showering.
+
+For most task stations:
+first scan = start
+second scan = complete
+
+For Out of Bed:
+the first scan itself may represent successful physical transition.
+
+Do not force the user to walk back to the tag solely to complete a 30-second transition.
+
+==================================================
+24. NFC ARCHITECTURE
+==================================================
+
+Implement NFC as an abstraction layer.
+
+Create a clean interface such as:
+
+NfcService
+
+with:
+
+isAvailable()
+startScanning()
+stopScanning()
+onTagDetected()
+readTagId()
+simulateScan()
+
+The React application should NOT directly depend on browser-specific NFC APIs.
+
+The application should receive a normalized event:
+
+{
+  tagId: string,
+  source: "native" | "web" | "simulation",
+  timestamp: string
+}
+
+Then the existing state machine handles the event.
+
+This means the same routine logic works for:
+
+Simulation
+Web NFC where available
+Native Android NFC
+
+==================================================
+25. IMPORTANT NFC TECHNICAL REQUIREMENT
+==================================================
+
+Do NOT claim that Web NFC can reliably provide the physical NFC UID.
+
+The future native Android implementation should use the Android NFC Tag object's hardware identifier.
+
+Android exposes Tag.getId() for the discovered tag.
+
+For native Android, use the NFC tag identifier as the primary physical identifier.
+
+For browser development:
+use simulation.
+
+If Web NFC is implemented, treat it as a secondary adapter and do not depend on UID access.
+
+Do not fake a UID.
+
+==================================================
+26. NATIVE ANDROID PREPARATION
+==================================================
+
+Prepare the project so that it can later be wrapped with Capacitor.
+
+Do not break the existing web application.
+
+If Capacitor is already installed, inspect its version before modifying anything.
+
+If Capacitor is not installed, do not blindly install a random NFC package.
+
+Instead create a clean NFC service interface so native Android NFC can be added safely.
+
+If implementing native NFC now:
+
+- use Android's NFC APIs
+- add required Android NFC permission/configuration
+- use reader mode / foreground handling appropriately
+- expose tag ID to TypeScript through the native bridge
+- handle NFC unavailable
+- handle NFC disabled
+- handle scan timeout
+- handle duplicate reads
+- handle unknown tag
+- handle tag read while wrong station is active
+
+Do not pretend browser NFC equals native Android NFC.
+
+==================================================
+27. DUPLICATE NFC READ PROTECTION
+==================================================
+
+NFC readers may detect the same physical tag multiple times while the phone remains close to it.
+
+Prevent accidental double state transitions.
+
+Implement a short debounce / duplicate-read guard.
+
+Example:
+
+same tag detected repeatedly within 1–2 seconds
+
+→ treat as one scan.
+
+The user must deliberately remove and present the tag again for the second action.
+
+Make this configurable if necessary.
+
+==================================================
+28. NFC TAG MANAGER
+==================================================
+
+Build the NFC Tag Manager.
+
+For every station show:
+
+Station
+Tag status
+Tag ID
+Source
+Last tested
+
+Actions:
+
+REGISTER TAG
+TEST TAG
+REASSIGN
+REPLACE
+UNREGISTER
+
+Registration flow:
+
+1. Choose station
+2. Tap REGISTER
+3. Show:
+   "Hold your phone near the NFC tag."
+4. Native NFC detects tag
+5. Read physical tag ID
+6. Save tag ID
+7. Associate tag with station
+8. Show confirmation
+
+Example:
+
+STATION 2
+
+Stretch + Foam Roll
+
+NFC TAG
+Connected
+
+ID:
+04:8A:23:91:...
+
+Do not require writing data to the tag.
+
+The physical tag ID is sufficient in native Android.
+
+==================================================
+29. TAG REPLACEMENT
+==================================================
+
+Allow replacing a tag.
+
+Example:
+
+Replace NFC tag
+
+"Scan the new tag."
+
+After scan:
+
+old tag becomes inactive
+new tag becomes assigned
+
+Do not delete historical events associated with the old tag.
+
+==================================================
+30. UNKNOWN NFC TAG
+==================================================
+
+If an unregistered NFC tag is scanned:
+
+Do NOT start a task.
+
+Show:
+
+UNKNOWN TAG
+
+This tag isn't assigned to a station.
+
+Then:
+
+REGISTER THIS TAG
+or
+CLOSE
+
+=============

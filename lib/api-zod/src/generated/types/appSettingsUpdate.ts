@@ -12,6 +12,7 @@ export interface AppSettingsUpdate {
   alarmEnabled?: boolean;
   freezeInterventionDelayMinutes?: number;
   freezeEscalationDelayMinutes?: number;
+  freezeStuckThresholdSeconds?: number;
   strictModeEnabled?: boolean;
   notificationsEnabled?: boolean;
   vibrationEnabled?: boolean;
