@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   useGetTodayRoutine,
   useGetSettings,
@@ -7,15 +7,20 @@ import {
   getGetTodaySummaryQueryKey,
   getGetSettingsQueryKey,
   useSessionAction,
+  useHandleNfcScan,
+  useListNfcTags,
+  getListNfcTagsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Battery, BatteryMedium, BatteryWarning, CheckCircle2,
   MapPin, Smartphone, Plus, ChevronDown, ChevronUp,
   Circle, CheckCircle, XCircle, SkipForward, AlertCircle,
+  SmartphoneNfc,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
+import { nfcService } from "@/services/nfc-service";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -145,6 +150,71 @@ function FreezeOverlay({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
+// ─── NFC scan hook ────────────────────────────────────────────────────────────
+// Manages the NFC scan lifecycle for the home page.
+// Starts scanning when there's an active session, stops when there isn't.
+// Validates the UID against the expected checkpoint BEFORE calling the API
+// to prevent accidentally mutating the wrong station.
+
+interface UseHomeNfcOptions {
+  /** checkpointId we expect right now (waiting or in_progress) */
+  expectedCheckpointId: number | null;
+  /** called when a valid (non-debounced, correct-checkpoint or unknown) UID arrives */
+  onScan: (uid: string) => void;
+  /** called when a known-wrong station is scanned */
+  onWrongStation: () => void;
+  /** tags list from API (for local UID→checkpoint resolution) */
+  nfcTags: Array<{ tagUid: string; checkpointId?: number | null }> | undefined;
+}
+
+function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: UseHomeNfcOptions) {
+  const isNative = nfcService.isNative();
+
+  // Keep fresh refs so the callback closure doesn't go stale
+  const expectedRef = useRef(expectedCheckpointId);
+  const tagsRef = useRef(nfcTags);
+  const onScanRef = useRef(onScan);
+  const onWrongRef = useRef(onWrongStation);
+
+  useEffect(() => { expectedRef.current = expectedCheckpointId; }, [expectedCheckpointId]);
+  useEffect(() => { tagsRef.current = nfcTags; }, [nfcTags]);
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  useEffect(() => { onWrongRef.current = onWrongStation; }, [onWrongStation]);
+
+  const handleTag = useCallback((uid: string) => {
+    const expected = expectedRef.current;
+    const tags = tagsRef.current ?? [];
+
+    // Resolve the UID to a checkpointId using the local tag cache
+    const match = tags.find(t => t.tagUid === uid);
+
+    if (match && match.checkpointId && expected && match.checkpointId !== expected) {
+      // Known tag but wrong station — block the API call
+      console.debug(
+        `[HomeNFC] Wrong station — expected checkpointId ${expected}, scanned UID ${uid} → checkpoint ${match.checkpointId}`
+      );
+      onWrongRef.current();
+      return;
+    }
+
+    // Unknown UID or correct station — let the API sort it out
+    onScanRef.current(uid);
+  }, []);
+
+  useEffect(() => {
+    if (!isNative || !expectedCheckpointId) {
+      nfcService.stopScanning();
+      return;
+    }
+
+    nfcService.startScanning(handleTag);
+
+    return () => {
+      nfcService.stopScanning();
+    };
+  }, [isNative, expectedCheckpointId, handleTag]);
+}
+
 // ─── Home ─────────────────────────────────────────────────────────────────────
 
 export function Home() {
@@ -154,12 +224,18 @@ export function Home() {
   });
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const startRoutine = useStartTodayRoutine();
+  const handleNfcScan = useHandleNfcScan();
+  const { data: nfcTags } = useListNfcTags({ query: { queryKey: getListNfcTagsQueryKey() } });
 
   const [completedName, setCompletedName] = useState<string | null>(null);
   const prevInProgressRef = useRef<any>(null);
 
   const inProgressSession = routine?.sessions?.find((s: any) => s.status === "in_progress");
   const nextSession = routine?.sessions?.find((s: any) => s.status === "waiting");
+
+  // The checkpoint we're actively waiting on (either in-progress or next waiting)
+  const activeCheckpointId: number | null =
+    inProgressSession?.checkpointId ?? nextSession?.checkpointId ?? null;
 
   useEffect(() => {
     const prev = prevInProgressRef.current;
@@ -169,7 +245,92 @@ export function Home() {
       return () => clearTimeout(t);
     }
     prevInProgressRef.current = inProgressSession ?? null;
+    return undefined;
   }, [inProgressSession]);
+
+  // ── NFC scan handler ───────────────────────────────────────────────────────
+  const [earlyWarningDialog, setEarlyWarningDialog] = useState<any>(null);
+
+  const handleScanResult = useCallback(
+    (uid: string) => {
+      console.debug(`[Home] Calling POST /api/nfc/scan with UID: ${uid}`);
+      handleNfcScan.mutate(
+        { data: { tagUid: uid } },
+        {
+          onSuccess: (result: any) => {
+            console.debug(
+              `[Home] Scan result — action: ${result.action} | checkpoint: ${result.checkpointName} | state: ${result.session?.status ?? "n/a"}`
+            );
+
+            switch (result.action) {
+              case "started":
+                toast(`${result.checkpointName} started. Park your phone.`);
+                break;
+              case "completed":
+                // Routine polling will update state; completion flash shows automatically
+                break;
+              case "early_complete_warning":
+                setEarlyWarningDialog(result);
+                return; // don't invalidate yet
+              case "unknown_tag":
+                toast("No station assigned to this tag.", { duration: 2000 });
+                console.debug("[Home] Unknown tag — reason: no mapping");
+                return;
+              case "no_checkpoint_assigned":
+                toast("Tag has no station assigned.", { duration: 2000 });
+                return;
+              case "debounced":
+                console.debug("[Home] Scan debounced by server");
+                return;
+              default:
+                break;
+            }
+
+            queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+            queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+          },
+          onError: () => {
+            console.debug("[Home] Scan API error — reason: network/server");
+          },
+        }
+      );
+    },
+    [handleNfcScan, queryClient]
+  );
+
+  const handleWrongStation = useCallback(() => {
+    toast("Wrong station.", { duration: 2000 });
+    console.debug("[Home] Wrong station — reason: wrong station");
+  }, []);
+
+  // Activate the NFC listener whenever there's an active session
+  useHomeNfc({
+    expectedCheckpointId: activeCheckpointId,
+    onScan: handleScanResult,
+    onWrongStation: handleWrongStation,
+    nfcTags,
+  });
+
+  // ── Early-complete session action ──────────────────────────────────────────
+  const sessionAction = useSessionAction();
+
+  const handleCompleteAnyway = () => {
+    if (!earlyWarningDialog?.sessionId) { setEarlyWarningDialog(null); return; }
+    sessionAction.mutate(
+      { id: earlyWarningDialog.sessionId, data: { action: "complete_anyway", reason: "early override via NFC" } },
+      {
+        onSuccess: () => {
+          toast("Completed early.");
+          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+          setEarlyWarningDialog(null);
+        },
+        onError: () => toast.error("Failed to complete"),
+      }
+    );
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   const handleStart = (mode: "full" | "reduced" | "survival") => {
     startRoutine.mutate(
@@ -230,19 +391,42 @@ export function Home() {
 
   if (inProgressSession) {
     return (
-      <div className="flex-1 flex flex-col">
-        <InProgressView session={inProgressSession} />
-        {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
-      </div>
+      <>
+        <div className="flex-1 flex flex-col">
+          <InProgressView session={inProgressSession} onScanResult={handleScanResult} />
+          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+        </div>
+
+        {/* Early complete warning dialog */}
+        {earlyWarningDialog && (
+          <EarlyCompleteDialog
+            dialog={earlyWarningDialog}
+            onKeepGoing={() => setEarlyWarningDialog(null)}
+            onCompleteAnyway={handleCompleteAnyway}
+            isPending={sessionAction.isPending}
+          />
+        )}
+      </>
     );
   }
 
   if (nextSession) {
     return (
-      <div className="flex-1 flex flex-col">
-        <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} />
-        {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
-      </div>
+      <>
+        <div className="flex-1 flex flex-col">
+          <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} />
+          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+        </div>
+
+        {earlyWarningDialog && (
+          <EarlyCompleteDialog
+            dialog={earlyWarningDialog}
+            onKeepGoing={() => setEarlyWarningDialog(null)}
+            onCompleteAnyway={handleCompleteAnyway}
+            isPending={sessionAction.isPending}
+          />
+        )}
+      </>
     );
   }
 
@@ -270,6 +454,46 @@ export function Home() {
         </button>
       )}
     </div>
+  );
+}
+
+// ─── Early-complete warning dialog ────────────────────────────────────────────
+
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Button } from "@/components/ui/button";
+
+function EarlyCompleteDialog({
+  dialog,
+  onKeepGoing,
+  onCompleteAnyway,
+  isPending,
+}: {
+  dialog: any;
+  onKeepGoing: () => void;
+  onCompleteAnyway: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <DialogPrimitive.Root open={true} onOpenChange={(open) => !open && onKeepGoing()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-[50%] top-[50%] z-50 w-[90%] max-w-sm translate-x-[-50%] translate-y-[-50%] bg-background p-6 shadow-xl rounded-3xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+          <h2 className="text-xl font-bold mb-2">Too fast?</h2>
+          <p className="text-sm text-muted-foreground mb-6">{dialog?.message}</p>
+          <div className="flex flex-col gap-3">
+            <Button onClick={onKeepGoing} className="rounded-2xl h-12">Keep going</Button>
+            <Button
+              variant="outline"
+              className="rounded-2xl h-12"
+              onClick={onCompleteAnyway}
+              disabled={isPending}
+            >
+              Complete anyway
+            </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
@@ -349,6 +573,7 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
 
   const name: string = session.checkpointName ?? "Station";
   const parts = name.split(/\s*\+\s*/);
+  const isNative = nfcService.isNative();
 
   return (
     <div className="flex-1 flex flex-col animate-in slide-in-from-bottom-4 duration-500 relative">
@@ -386,10 +611,17 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
           </div>
         )}
 
-        {/* NFC instruction */}
-        <p className="text-base text-muted-foreground">
-          Go to this station and scan your NFC tag.
-        </p>
+        {/* NFC instruction — adapts to native vs web */}
+        {isNative ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <SmartphoneNfc size={16} className="shrink-0" />
+            <span>Hold phone near the station tag.</span>
+          </div>
+        ) : (
+          <p className="text-base text-muted-foreground">
+            Go to this station and scan your NFC tag.
+          </p>
+        )}
       </div>
 
       {/* subtle simulation fallback */}
@@ -408,7 +640,7 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
 
 // ─── In-progress view ─────────────────────────────────────────────────────────
 
-function InProgressView({ session }: { session: any }) {
+function InProgressView({ session, onScanResult: _onScanResult }: { session: any; onScanResult?: (uid: string) => void }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
   // targetDurationMinutes may be decimal (e.g. 0.5 = 30s)
@@ -418,6 +650,7 @@ function InProgressView({ session }: { session: any }) {
   const [addedMins, setAddedMins] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
+  // Restore elapsed from startedAt timestamp (handles app resume correctly)
   useEffect(() => {
     const start = session.startedAt ? new Date(session.startedAt).getTime() : Date.now();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));

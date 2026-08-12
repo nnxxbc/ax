@@ -33,7 +33,10 @@ A calm, mobile-first web app that guides people with executive dysfunction throu
 
 ## Architecture decisions
 
-- **NFC abstraction**: All NFC logic routes through `POST /api/nfc/scan` (real tag UID) or `POST /api/nfc/simulate` (checkpoint ID). The same `processNfcScan` function handles both. Future Capacitor integration only needs to supply the tagUid from native NFC.
+- **NFC abstraction**: All NFC logic routes through `POST /api/nfc/scan` (real tag UID) or `POST /api/nfc/simulate` (checkpoint ID). The same `processNfcScan` function handles both. `NFCService` (`src/services/nfc-service.ts`) is the single abstraction — real NFC and simulation both call the same scan handler.
+- **NFCService**: Detects Capacitor native context automatically. In native Android: uses `@capgo/capacitor-nfc` plugin to start a persistent NFC reader session. In web/Replit dev: no-op (simulation via the Stations page still works). Normalises tag UIDs to `"04:8A:23:XX:XX:XX"` format. Client-side debounce: 1 500 ms per UID (server adds a 2 000 ms guard).
+- **Home page NFC listener** (`useHomeNfc` hook): Automatically starts NFC scanning when there is a waiting or in_progress session. Resolves detected UID against the cached tags list to catch wrong-station scans client-side before calling the API. Shows a "Wrong station." toast without making an API call.
+- **Capacitor**: Configured at `artifacts/transition-assistant/capacitor.config.ts`. Plugin: `@capgo/capacitor-nfc` v8 (Capacitor v8). Build instructions in `ANDROID_BUILD.md`.
 - **One-tag start/complete**: The scan processor checks session state — WAITING → start, IN_PROGRESS → complete (or warn if too early).
 - **getOrCreateTodayRoutine**: Auto-creates today's routine with appropriate sessions on first API call. Energy mode determines which checkpoints are included.
 - **Codegen fix**: Orval v8 generates `zod.int()` (Zod v4 syntax) but the project uses Zod v3. A post-process step in the codegen script replaces `zod.int()` with `zod.number()` in the generated api-zod file.
@@ -52,6 +55,28 @@ A calm, mobile-first web app that guides people with executive dysfunction throu
 ## User preferences
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
+
+## Android NFC build
+
+See `artifacts/transition-assistant/ANDROID_BUILD.md` for the full step-by-step. Short version:
+
+```bash
+# 1. Build web assets (must set BASE_PATH=/ for Capacitor)
+BASE_PATH=/ pnpm --filter @workspace/transition-assistant run build
+
+# 2. Add Android project (first time only)
+cd artifacts/transition-assistant && npx cap add android
+
+# 3. Add NFC permissions to android/app/src/main/AndroidManifest.xml:
+#    <uses-permission android:name="android.permission.NFC" />
+#    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
+# 4. Sync web assets
+npx cap sync android
+
+# 5. Open in Android Studio → Run on device
+npx cap open android
+```
 
 ## Gotchas
 

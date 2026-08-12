@@ -1,0 +1,727 @@
+IMPLEMENT REAL NFC — ANDROID FUNCTIONALITY
+
+You are working on an existing React + TypeScript application called the Physical Transition Assistant.
+
+IMPORTANT:
+DO NOT rebuild the application.
+DO NOT redesign the UI.
+DO NOT replace the existing routine/state-machine architecture.
+DO NOT remove the existing Simulation Mode.
+DO NOT implement fake NFC and call it real NFC.
+
+The goal of this task is to make the EXISTING application communicate with real physical NFC tags on Android.
+
+TARGET DEVICE:
+- Android phone
+- OPPO Reno9 A
+- NFC hardware available
+- The app will eventually be packaged as an Android app using Capacitor/native Android functionality.
+
+The physical tags are:
+- EdisonBrain NFC NTAG213
+- 10 tags
+- Tags do NOT need meaningful NDEF data written to them.
+- The app should identify tags using their NFC identifier/UID where Android exposes it.
+
+==================================================
+1. ARCHITECTURE
+==================================================
+
+Use the existing React/TypeScript application as the UI layer.
+
+Implement a clean NFC abstraction:
+
+NFCService
+
+with functionality similar to:
+
+- isAvailable()
+- startScanning()
+- stopScanning()
+- onTagDetected(callback)
+- getTagIdentifier(tag)
+- simulateTagScan(tagId)
+
+The React application must NOT contain Android-specific NFC logic directly.
+
+The architecture should be:
+
+React UI
+    ↓
+NFCService abstraction
+    ↓
+Capacitor/native Android NFC implementation
+    ↓
+Android NFC reader mode
+    ↓
+physical NFC tag
+
+Simulation Mode should use the SAME NFCService abstraction.
+
+Therefore:
+
+REAL NFC:
+physical tag → NFCService → application state machine
+
+SIMULATION:
+simulated scan → NFCService → application state machine
+
+Both paths must ultimately execute the exact same scan handler.
+
+==================================================
+2. CAPACITOR
+==================================================
+
+If Capacitor is not already installed/configured, add it correctly.
+
+Use the existing project structure and package manager.
+
+Install/configure the required Capacitor Android dependencies.
+
+Create an Android project if one does not already exist.
+
+Do not destroy or overwrite existing application functionality.
+
+The final project should be capable of:
+
+npm run build
+
+and then:
+
+npx cap sync android
+
+and:
+
+npx cap open android
+
+or the equivalent existing workflow.
+
+Document the exact commands needed to build/install the Android application.
+
+==================================================
+3. NATIVE ANDROID NFC
+==================================================
+
+Implement native Android NFC scanning using Android's NFC APIs.
+
+Prefer Android reader mode / foreground scanning appropriate for this use case.
+
+The app should detect NFC tags while the application is active.
+
+When a tag is detected:
+
+1. Read the NFC tag UID / identifier.
+2. Convert it into a stable normalized string.
+3. Send the identifier to the React layer through the NFCService.
+4. React resolves the identifier against the configured NFC tag mappings.
+5. The existing checkpoint state machine handles the scan.
+
+DO NOT depend on NDEF text stored on the tag.
+
+The NTAG213 tags can remain blank.
+
+The physical tag UID is the identifier.
+
+Normalize identifiers consistently, for example:
+
+04:8A:23:91:XX:XX:XX
+
+The exact UID format should be determined from Android's Tag object.
+
+Do not hard-code example IDs.
+
+==================================================
+4. NFC TAG REGISTRATION
+==================================================
+
+Make the existing NFC Tag Manager functional.
+
+The user should be able to:
+
+1. Select a checkpoint.
+2. Tap "Register NFC Tag".
+3. The app enters scanning mode.
+4. User touches the physical NFC tag to the phone.
+5. Android detects it.
+6. App reads the UID.
+7. App shows:
+
+NFC TAG DETECTED
+
+[normalized UID]
+
+Assign to:
+
+[Checkpoint name]
+
+8. User confirms assignment.
+
+Store:
+
+checkpointId
+nfcTagUid
+createdAt
+updatedAt
+
+Persist this mapping locally.
+
+If the application already has a database/local persistence layer, integrate with it rather than creating a second unrelated database.
+
+==================================================
+5. TAG MANAGER
+==================================================
+
+The existing NFC Tag Manager should support:
+
+- Register tag
+- Replace tag
+- Reassign tag
+- Unregister tag
+- Test tag
+- View UID
+
+Example:
+
+STATION 2
+Stretch + Foam Roll
+
+NFC TAG
+04:XX:XX:XX:XX:XX:XX
+
+[Scan / Replace]
+
+Do not require writing anything to the tag.
+
+==================================================
+6. REAL SCAN → CHECKPOINT STATE MACHINE
+==================================================
+
+This is extremely important.
+
+Do NOT create a separate NFC workflow.
+
+A real NFC scan must go through the existing checkpoint state machine.
+
+Expected behavior:
+
+WAITING
+↓
+scan assigned NFC tag
+↓
+IN_PROGRESS
+↓
+timer starts automatically
+↓
+user performs task
+↓
+same NFC tag scanned again
+↓
+COMPLETED
+↓
+next checkpoint appears
+
+The same physical tag must work for both scans.
+
+The application must distinguish:
+
+FIRST SCAN:
+WAITING → IN_PROGRESS
+
+SECOND SCAN:
+IN_PROGRESS → COMPLETED
+
+Do not require a Start button.
+
+Do not require a Done button.
+
+Do not add confirmation dialogs between the scan and state transition unless absolutely necessary to prevent accidental duplicate scans.
+
+==================================================
+7. WRONG TAG PROTECTION
+==================================================
+
+If the user scans a tag that is not the expected checkpoint:
+
+DO NOT advance the routine.
+
+Show a very short, clear message such as:
+
+"Wrong station."
+
+or:
+
+"That's not your next station."
+
+Then return immediately to the current task.
+
+Do not reset progress.
+
+Do not mark anything as missed.
+
+Do not punish the user.
+
+==================================================
+8. DUPLICATE NFC READ PROTECTION
+==================================================
+
+Android may detect the same NFC tag multiple times while it remains close to the phone.
+
+Prevent accidental double-processing.
+
+Implement a debounce/cooldown mechanism.
+
+Example:
+
+After detecting a tag:
+
+ignore repeated detections of the same UID for approximately 1–2 seconds.
+
+But do NOT make the cooldown so long that returning to scan the same tag becomes difficult.
+
+The second intentional scan after completing a task must work normally.
+
+==================================================
+9. NFC SCANNING UX
+==================================================
+
+When the app is waiting for a real NFC scan, expose a clear scanning state.
+
+For example:
+
+READY TO SCAN
+
+Hold your phone near the station tag.
+
+When detected:
+
+NFC TAG DETECTED
+
+Then immediately process it.
+
+Do not force the user to press "Start scanning" every time if the current application state can safely remain listening for the expected NFC tag.
+
+However, respect Android lifecycle limitations.
+
+When the app is not in a state where NFC scanning should occur, stop reader mode appropriately.
+
+==================================================
+10. ACTIVE TASK
+==================================================
+
+When a task is IN_PROGRESS:
+
+The app should be waiting for the SAME NFC UID.
+
+Example:
+
+STRETCH
++
+FOAM ROLL
+
+09:32
+
+RETURN & SCAN
+
+Scan the same NFC tag again to complete.
+
+If another registered NFC tag is scanned:
+
+"Wrong station."
+
+Do not complete the task.
+
+When the correct UID is detected:
+
+stop the timer
+mark the checkpoint COMPLETED
+record completion timestamp
+record actual duration
+save event history
+advance to the next checkpoint
+
+No Done button.
+
+==================================================
+11. OUT OF BED
+==================================================
+
+Station 1 is special.
+
+The user sleeps downstairs and the Station 1 NFC tag is upstairs.
+
+The purpose of Station 1 is physical transition:
+
+BED
+→
+UPSTAIRS
+→
+SCAN
+
+When the Station 1 tag is scanned:
+
+mark OUT OF BED complete.
+
+The default timer is currently 0 / no timer.
+
+Do not require the user to remain at the station for a duration.
+
+The scan itself is the confirmation.
+
+==================================================
+12. OFFLINE-FIRST
+==================================================
+
+NFC functionality must work without internet.
+
+The following must remain local:
+
+- NFC tag mappings
+- active checkpoint
+- current task state
+- timer state
+- completion events
+- missed events
+- simulation state
+
+Do not make NFC scanning dependent on a server request.
+
+If internet/database synchronization exists, sync later.
+
+Never lose a physical scan because the network is unavailable.
+
+==================================================
+13. APP LIFECYCLE
+==================================================
+
+Handle Android lifecycle correctly.
+
+When the app goes into background:
+
+- do not claim NFC will continue working if Android prevents it.
+- preserve the active task state.
+- preserve timer timestamps.
+- restore state when app resumes.
+
+When the app returns to foreground:
+
+- restore the active checkpoint.
+- restore the timer based on timestamps rather than assuming the JavaScript timer continued running.
+- resume NFC scanning when appropriate.
+
+Do NOT implement fake background NFC behavior.
+
+==================================================
+14. NFC AVAILABILITY
+==================================================
+
+At startup / NFC Tag Manager:
+
+Check whether NFC hardware exists and whether NFC is enabled.
+
+Handle:
+
+NFC unavailable
+
+and:
+
+NFC disabled
+
+separately.
+
+Example:
+
+NFC NOT AVAILABLE
+"This phone does not have NFC."
+
+or:
+
+NFC IS OFF
+"Turn on NFC in Android settings."
+
+Do not crash.
+
+Simulation Mode must continue working even if NFC is unavailable.
+
+==================================================
+15. DEVELOPMENT / SIMULATION MODE
+==================================================
+
+KEEP THE EXISTING NFC Simulator.
+
+Do not remove it.
+
+Simulation and real NFC must use the same underlying scan handler.
+
+For example:
+
+simulateScan(checkpointId)
+
+should ultimately call the same function that receives:
+
+handleNfcScan(uid)
+
+after resolving the simulated checkpoint's UID.
+
+This ensures the simulator accurately tests the real state machine.
+
+==================================================
+16. DEBUGGING / DEVELOPER TOOLS
+==================================================
+
+Add useful developer logging.
+
+When NFC is detected, log:
+
+NFC detected
+UID:
+Tech:
+Timestamp:
+
+When resolving:
+
+UID matched checkpoint:
+Checkpoint:
+Current state:
+
+When ignored:
+
+Reason:
+- wrong station
+- duplicate read
+- no mapping
+- NFC unavailable
+
+Keep this behind Developer Mode / debug logging if appropriate.
+
+Do not clutter the normal user interface.
+
+==================================================
+17. TAG TEST FUNCTION
+==================================================
+
+The existing "Test Tag" functionality should work with a real tag.
+
+Example:
+
+Settings
+→ NFC Tag Manager
+→ Station 2
+→ Test Tag
+
+Then:
+
+READY
+
+Scan the assigned tag.
+
+Result:
+
+TAG VERIFIED
+
+Stretch + Foam Roll
+
+UID:
+04:XX:XX:XX
+
+If the wrong tag is scanned:
+
+WRONG TAG
+
+Expected:
+Stretch + Foam Roll
+
+Detected:
+[other checkpoint]
+
+Do not modify the assignment during testing.
+
+==================================================
+18. SECURITY / DATA INTEGRITY
+==================================================
+
+Do not trust arbitrary NFC text payloads.
+
+The physical UID is the identifier.
+
+Only registered UIDs can trigger checkpoints.
+
+Do not allow an unknown NFC tag to alter routine state.
+
+Do not store sensitive personal data on the NFC tags.
+
+==================================================
+19. ACCEPTANCE TESTS
+==================================================
+
+Before considering this implementation complete, test the following.
+
+TEST 1 — Register
+
+Register a physical NTAG213 to Station 1.
+
+Expected:
+UID appears and mapping persists after app restart.
+
+TEST 2 — First scan
+
+Station 1 is WAITING.
+
+Scan Station 1.
+
+Expected:
+Station 1 becomes IN_PROGRESS or COMPLETED according to its no-timer logic, following the existing application behavior.
+
+TEST 3 — Timed task
+
+Station 2 is WAITING.
+
+Scan Station 2.
+
+Expected:
+Station 2 becomes IN_PROGRESS.
+Timer starts automatically.
+
+TEST 4 — Same tag
+
+Scan Station 2 again.
+
+Expected:
+Station 2 becomes COMPLETED.
+Completion timestamp recorded.
+Next checkpoint becomes active.
+
+TEST 5 — Wrong tag
+
+Station 2 is active.
+
+Scan Station 3.
+
+Expected:
+Station 2 remains active.
+No completion.
+Clear "Wrong station" feedback.
+
+TEST 6 — Duplicate read
+
+Hold Station 2 tag against phone.
+
+Expected:
+One logical scan only.
+
+TEST 7 — Offline
+
+Disable internet.
+
+Scan a registered NFC tag.
+
+Expected:
+Routine still works.
+
+TEST 8 — Restart app
+
+Start Station 2.
+Close/reopen app.
+
+Expected:
+Station 2 remains IN_PROGRESS.
+Timer is restored correctly.
+
+TEST 9 — Simulation
+
+Use NFC Simulator.
+
+Expected:
+Exactly the same state transitions as physical NFC.
+
+TEST 10 — Unknown tag
+
+Scan an unregistered NFC tag.
+
+Expected:
+"No station assigned to this tag."
+No routine state changes.
+
+==================================================
+20. DO NOT BREAK EXISTING FEATURES
+==================================================
+
+Preserve:
+
+- existing Home screen
+- existing Next Stop screen
+- existing active task screen
+- existing timer system
+- +5 / +10 / +30 minute controls
+- checkpoint duration settings
+- Full / Reduced / Survival modes
+- skip functionality
+- history
+- insights
+- notifications
+- developer mode
+- simulation mode
+
+Do not redesign these.
+
+Only make the NFC layer functional and connect it correctly.
+
+==================================================
+21. IMPORTANT TECHNICAL REQUIREMENT
+==================================================
+
+At the end of implementation, clearly tell me:
+
+1. Which files were created/changed.
+2. Which packages were installed.
+3. Whether Capacitor Android was added.
+4. How the NFC native bridge works.
+5. Exact commands to build the Android app.
+6. Exact commands to install it on my OPPO Reno9 A.
+7. Any Android permissions/configuration required.
+8. Whether NFC scanning works only while the app is foregrounded.
+9. What still requires native Android work in a later phase.
+
+Do not tell me "NFC is implemented" unless the Android native layer is actually present and connected.
+
+If something cannot be implemented in the current Replit/web environment, say exactly what cannot be done and implement everything that CAN be done without pretending it is real NFC.
+
+==================================================
+FINAL GOAL
+==================================================
+
+I want this exact real-world interaction:
+
+PHONE IN HAND
+↓
+GO TO PHYSICAL STATION
+↓
+SCAN NTAG213
+↓
+TASK AUTOMATICALLY STARTS
+↓
+TIMER AUTOMATICALLY STARTS
+↓
+PARK PHONE ON MAGNET
+↓
+LEAVE PHONE
+↓
+DO TASK
+↓
+RETURN
+↓
+PICK UP PHONE
+↓
+SCAN THE SAME NTAG213
+↓
+TASK AUTOMATICALLY COMPLETES
+↓
+NEXT TASK APPEARS
+
+No Start button.
+No Done button.
+No manual NFC interaction beyond touching the phone to the physical tag.
+No fake NFC.
+No NDEF-writing requirement.
+No internet requirement for the core routine.
+
+Build this as a real Android NFC implementation while preserving the existing application.
