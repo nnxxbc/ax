@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Transition Assistant</string>
+    <string name="title_activity_main">Transition Assistant</string>
+    <string name="package_name">com.physical.transitionassistant</string>
+    <string name="custom_url_scheme">com.physical.transitionassistant</string>
+</resources>

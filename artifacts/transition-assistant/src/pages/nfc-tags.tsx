@@ -246,7 +246,7 @@ function ScanDialog({
                 className="flex h-12 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">— Unassigned —</option>
-                {checkpoints
+                {Array.isArray(checkpoints) && checkpoints
                   .filter((c) => c.isActive)
                   .map((c) => (
                     <option key={c.id} value={c.id}>
@@ -405,7 +405,7 @@ export function NfcTags() {
     nfcService.getAvailability().then(setAvailability);
   }, []);
 
-  const allCheckpoints = checkpoints ?? [];
+  const allCheckpoints = Array.isArray(checkpoints) ? checkpoints : [];
 
   const handleSave = (uid: string, label: string, checkpointId?: number) => {
     if (editingTag) {
@@ -529,7 +529,7 @@ export function NfcTags() {
 
       {/* Tag list */}
       <div className="flex flex-col gap-3">
-        {!tags || tags.length === 0 ? (
+        {(!Array.isArray(tags) || tags.length === 0) ? (
           <div className="text-center p-8 bg-card rounded-3xl border border-border/50 border-dashed">
             <SmartphoneNfc className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
             <p className="text-muted-foreground mb-3">No tags registered.</p>

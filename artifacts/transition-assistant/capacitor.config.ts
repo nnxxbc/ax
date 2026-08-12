@@ -20,6 +20,9 @@ const config: CapacitorConfig = {
   appId: "com.physical.transitionassistant",
   appName: "Transition Assistant",
   webDir: "dist/public",
+  server: {
+    androidScheme: "http",
+  },
 
   // ── Android-specific settings ─────────────────────────────────────────────
   android: {

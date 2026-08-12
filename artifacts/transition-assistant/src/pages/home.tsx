@@ -432,8 +432,8 @@ export function Home() {
   }
 
   // Active routine but empty/all done
-  const allDone = routine.sessions.length > 0 &&
-    routine.sessions.every((s: any) => ["completed", "skipped", "missed", "cancelled"].includes(s.status));
+  const allDone = (routine.sessions?.length ?? 0) > 0 &&
+    routine.sessions?.every((s: any) => ["completed", "skipped", "missed", "cancelled"].includes(s.status));
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">

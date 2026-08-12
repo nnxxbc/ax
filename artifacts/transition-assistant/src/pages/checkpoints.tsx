@@ -51,7 +51,7 @@ export function Checkpoints() {
     );
   }
 
-  const sorted = [...(checkpoints ?? [])].sort((a, b) => a.order - b.order);
+  const sorted = [...(Array.isArray(checkpoints) ? checkpoints : [])].sort((a, b) => a.order - b.order);
 
   const handleSave = (id: number, mins: number) => {
     updateCheckpoint.mutate(
