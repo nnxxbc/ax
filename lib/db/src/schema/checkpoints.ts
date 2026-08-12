@@ -1,6 +1,6 @@
 import { pgTable, serial, text, real, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const checkpointsTable = pgTable("checkpoints", {
   id: serial("id").primaryKey(),
