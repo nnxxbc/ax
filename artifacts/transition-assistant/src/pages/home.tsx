@@ -291,6 +291,7 @@ export function Home() {
           },
           onError: () => {
             console.debug("[Home] Scan API error — reason: network/server");
+            toast.error("Connection error — scan not recorded. Try again.", { duration: 4000 });
           },
         }
       );
@@ -562,15 +563,6 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
     });
   };
 
-  const handleStartManual = () => {
-    sessionAction.mutate({ id: session.id, data: { action: "start" } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
-      },
-    });
-  };
-
   const name: string = session.checkpointName ?? "Station";
   const parts = name.split(/\s*\+\s*/);
   const isNative = nfcService.isNative();
@@ -624,12 +616,7 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
         )}
       </div>
 
-      {/* subtle simulation fallback */}
-      <div className="flex items-center justify-center gap-6 pb-6 pt-3">
-        <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleStartManual} disabled={sessionAction.isPending}>
-          Start without NFC
-        </button>
-        <span className="text-muted-foreground/40">·</span>
+      <div className="flex items-center justify-center pb-6 pt-3">
         <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleSkip} disabled={sessionAction.isPending}>
           Skip this one
         </button>
@@ -641,7 +628,6 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
 // ─── In-progress view ─────────────────────────────────────────────────────────
 
 function InProgressView({ session, onScanResult: _onScanResult }: { session: any; onScanResult?: (uid: string) => void }) {
-  const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
   // targetDurationMinutes may be decimal (e.g. 0.5 = 30s)
   const targetMins: number = session.targetDurationMinutes ?? session.defaultDurationMinutes ?? 0;
@@ -675,15 +661,6 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
       { id: session.id, data: { action: "extend_time", additionalMinutes: mins } },
       { onError: () => setAddedMins(prev => prev - mins) }
     );
-  };
-
-  const handleCompleteManual = () => {
-    sessionAction.mutate({ id: session.id, data: { action: "complete" } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
-      },
-    });
   };
 
   const name: string = session.checkpointName ?? "Station";
@@ -769,16 +746,6 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
         </div>
       </div>
 
-      {/* manual complete fallback */}
-      <div className="flex justify-center pb-6 pt-3">
-        <button
-          className="text-xs text-muted-foreground/60 underline underline-offset-4 active:opacity-60"
-          onClick={handleCompleteManual}
-          disabled={sessionAction.isPending}
-        >
-          Complete without NFC
-        </button>
-      </div>
     </div>
   );
 }
