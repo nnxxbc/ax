@@ -227,8 +227,16 @@ function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: U
     onScanRef.current(uid);
   }, []);
 
+  // Listens whenever Home is open natively — NOT gated on there being a
+  // current in-progress/waiting checkpoint. That gate used to mean a scan
+  // of ANY tag (e.g. a standalone "bed check" checkpoint meant to be used
+  // any time, including after the whole day's routine is already done)
+  // silently did nothing: the reader simply wasn't running, so the scan
+  // was never even seen by the app. handleScanResult already resolves and
+  // handles any tag correctly regardless of routine progress — this hook
+  // only needs to make sure the reader is actually on to feed it.
   useEffect(() => {
-    if (!isNative || !expectedCheckpointId) {
+    if (!isNative) {
       nfcService.stopScanning();
       return;
     }
@@ -238,7 +246,7 @@ function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: U
     return () => {
       nfcService.stopScanning();
     };
-  }, [isNative, expectedCheckpointId, handleTag]);
+  }, [isNative, handleTag]);
 }
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
@@ -831,64 +839,51 @@ export function Home() {
         <StuckSessionDialog session={stuckDialogSession} onChoice={handleStuckResolution} />
       )}
 
+      {/* Early complete warning + Bed mode dialogs are hoisted above the
+          in-progress/waiting/empty branch below (rather than duplicated
+          inside each one) so they always show regardless of which routine
+          state is active. This matters a lot for a "bed check" tag scanned
+          any time (e.g. going to rest at night after the rest of the day's
+          checkpoints are already done) — previously the ActiveRoutineEmpty
+          branch below didn't render bedModeDialog at all, so scanning a bed
+          tag at that point silently created the session server-side but
+          never showed the dialog, looking like the scan had failed. */}
+      {earlyWarningDialog && (
+        <EarlyCompleteDialog
+          dialog={earlyWarningDialog}
+          onKeepGoing={() => setEarlyWarningDialog(null)}
+          onCompleteAnyway={handleCompleteAnyway}
+          isPending={sessionAction.isPending}
+        />
+      )}
+
+      {bedModeDialog && (
+        <BedModeDialog
+          session={bedModeDialog.session}
+          onClose={() => setBedModeDialog(null)}
+        />
+      )}
+
       {inProgressSession ? (
-        <>
-          <div className="flex-1 flex flex-col">
-            <InProgressView
-              session={inProgressSession}
-              onScanResult={handleScanResult}
-              enforcementLevel={inProgressEnforcement}
-              frozenStage={frozenStage}
-              setFrozenStage={setFrozenStage}
-              frozenDestinationId={frozenDestinationId}
-              setFrozenDestinationId={setFrozenDestinationId}
-              logFrozenStep={logFrozenStep}
-              destinationOptions={checkpointsForEnforcement}
-            />
-            {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
-          </div>
-
-          {/* Early complete warning dialog */}
-          {earlyWarningDialog && (
-            <EarlyCompleteDialog
-              dialog={earlyWarningDialog}
-              onKeepGoing={() => setEarlyWarningDialog(null)}
-              onCompleteAnyway={handleCompleteAnyway}
-              isPending={sessionAction.isPending}
-            />
-          )}
-
-          {/* Bed mode dialog */}
-          {bedModeDialog && (
-            <BedModeDialog
-              session={bedModeDialog.session}
-              onClose={() => setBedModeDialog(null)}
-            />
-          )}
-        </>
+        <div className="flex-1 flex flex-col">
+          <InProgressView
+            session={inProgressSession}
+            onScanResult={handleScanResult}
+            enforcementLevel={inProgressEnforcement}
+            frozenStage={frozenStage}
+            setFrozenStage={setFrozenStage}
+            frozenDestinationId={frozenDestinationId}
+            setFrozenDestinationId={setFrozenDestinationId}
+            logFrozenStep={logFrozenStep}
+            destinationOptions={checkpointsForEnforcement}
+          />
+          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+        </div>
       ) : nextSession ? (
-        <>
-          <div className="flex-1 flex flex-col">
-            <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={nextEnforcement} />
-            {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
-          </div>
-
-          {earlyWarningDialog && (
-            <EarlyCompleteDialog
-              dialog={earlyWarningDialog}
-              onKeepGoing={() => setEarlyWarningDialog(null)}
-              onCompleteAnyway={handleCompleteAnyway}
-              isPending={sessionAction.isPending}
-            />
-          )}
-
-          {bedModeDialog && (
-            <BedModeDialog
-              session={bedModeDialog.session}
-              onClose={() => setBedModeDialog(null)}
-            />
-          )}
-        </>
+        <div className="flex-1 flex flex-col">
+          <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={nextEnforcement} />
+          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+        </div>
       ) : (
         <ActiveRoutineEmpty routine={routine} onStart={handleStart} isPending={startRoutine.isPending} />
       )}
@@ -970,19 +965,26 @@ function BedModeDialog({
   const sessionAction = useSessionAction();
 
   const handleAction = (mode: string) => {
+    // Respond immediately rather than waiting on the network round-trip —
+    // matches the rest of the app's local-first philosophy (Render's free
+    // instance can take 50+ seconds to wake from idle, which would
+    // otherwise make this dialog look hung/broken for no real reason).
+    // The mutation still fires and persists in the background; if it
+    // fails, it just means the mode label wasn't recorded server-side —
+    // not something that should trap the user on this dialog.
+    const messages: Record<string, string> = {
+      working_from_bed: "Intentional bed work started.",
+      resting: "Rest logged. No pressure.",
+      frozen: "Transition support active.",
+    };
+    toast.success(messages[mode] ?? "Bed mode set.");
+    onClose();
+
     sessionAction.mutate(
       { id: session.id, data: { action: "continue", mode } },
       {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-          const messages: Record<string, string> = {
-            working_from_bed: "Intentional bed work started.",
-            resting: "Rest logged. No pressure.",
-            frozen: "Transition support active.",
-          };
-          toast.success(messages[mode] ?? "Bed mode set.");
-          onClose();
-        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() }),
+        onError: (err) => console.error("[BedModeDialog] Failed to record mode (will not retry):", err),
       }
     );
   };
