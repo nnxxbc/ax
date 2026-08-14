@@ -60,7 +60,7 @@ app.use((err: any, req: any, res: any, next: any) => {
   res.status(err.status || 500).json({
     error: "UNHANDLED_ERROR",
     message: err.message,
-    details: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    details: err.stack,
     pg_hint: err.hint,
     pg_detail: err.detail,
   });
