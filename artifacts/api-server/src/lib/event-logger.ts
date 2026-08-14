@@ -5,7 +5,7 @@ export async function logEvent(
   req: Request,
   eventType: string,
   message: string,
-  opts: { checkpointId?: number | null; sessionId?: number | null; details?: string } = {}
+  opts: { checkpointId?: number | null; sessionId?: number | null; details?: string; clientEventId?: string } = {}
 ): Promise<void> {
   try {
     await db.insert(eventLogTable).values({
@@ -14,6 +14,7 @@ export async function logEvent(
       checkpointId: opts.checkpointId ?? null,
       sessionId: opts.sessionId ?? null,
       details: opts.details ?? null,
+      clientEventId: opts.clientEventId ?? null,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

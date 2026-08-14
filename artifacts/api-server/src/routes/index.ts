@@ -9,6 +9,7 @@ import settingsRouter from "./settings";
 import eventsRouter from "./events";
 import insightsRouter from "./insights";
 import debugRouter from "./debug";
+import syncRouter from "./sync";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(settingsRouter);
 router.use(eventsRouter);
 router.use(insightsRouter);
 router.use(debugRouter);
+router.use(syncRouter);
 
 export default router;

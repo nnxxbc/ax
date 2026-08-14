@@ -1,8 +1,10 @@
 import * as React from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Home, Grid, Calendar, Sparkles, Settings } from "lucide-react";
 import { useGetSettings, getGetSettingsQueryKey, useGetTodayRoutine, getGetTodayRoutineQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { EmergencyUnlock } from "./emergency-unlock";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -16,8 +18,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isStrict = settings?.enforcementLevel === "strict";
   const isFocused = settings?.enforcementLevel === "focused";
 
+  // Phase 1 requirement #9 — strict mode must never trap the user because
+  // of an app bug. A 5s hold on the always-present EmergencyUnlock control
+  // clears this for as long as the current session stays active; it
+  // re-engages automatically once a new checkpoint starts, so it can't
+  // quietly disable strict mode forever by accident.
+  const [emergencyUnlocked, setEmergencyUnlocked] = useState(false);
+  useEffect(() => {
+    if (!inProgress) setEmergencyUnlocked(false);
+  }, [inProgress]);
+
   const showNav = !isFocused || !inProgress;
-  const navDisabled = isStrict && inProgress;
+  const navDisabled = isStrict && inProgress && !emergencyUnlocked;
 
   return (
     <div className="mx-auto w-full max-w-[430px] min-h-[100dvh] bg-background flex flex-col relative shadow-2xl shadow-black/5 sm:border-x sm:border-border/50">
@@ -35,6 +47,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavItem icon={Sparkles} label="Insights"   path="/insights"    isActive={location === "/insights"} />
           <NavItem icon={Settings} label="Settings"   path="/settings"    isActive={["/settings", "/nfc-tags", "/checkpoints"].includes(location)} />
         </nav>
+      )}
+
+      {/* Always reachable regardless of enforcement state — see emergency-unlock.tsx */}
+      {isStrict && inProgress && !emergencyUnlocked && (
+        <EmergencyUnlock onUnlock={() => setEmergencyUnlocked(true)} />
       )}
     </div>
   );

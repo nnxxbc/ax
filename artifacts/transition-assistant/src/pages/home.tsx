@@ -7,16 +7,17 @@ import {
   getGetTodaySummaryQueryKey,
   getGetSettingsQueryKey,
   useSessionAction,
-  useHandleNfcScan,
   useListNfcTags,
   getListNfcTagsQueryKey,
+  useListCheckpoints,
+  getListCheckpointsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Battery, BatteryMedium, BatteryWarning, CheckCircle2,
   MapPin, Smartphone, Plus, ChevronDown, ChevronUp,
   Circle, CheckCircle, XCircle, SkipForward, AlertCircle,
-  SmartphoneNfc, X,
+  SmartphoneNfc, X, CloudOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
@@ -24,6 +25,14 @@ import { nfcService } from "@/services/nfc-service";
 import { notificationService } from "@/services/notification-service";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
+import { processLocalScan, isSessionStuck, type LocalSession } from "@/lib/nfc-state-machine";
+import {
+  toLocalSession, toUiSession, patchSessionsForUi, resolveCheckpointFromTag,
+  cacheSessions, getCachedSessions, getCachedRoutineId,
+  cacheCheckpoints, getCachedCheckpoints,
+  queueCheckpointScan, flushSyncQueue, recordScanDiagnostics, sendSyncEvent,
+} from "@/lib/offline-sync";
+import { startBackgroundSync, pendingCount } from "@/lib/sync-queue";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -234,12 +243,73 @@ export function Home() {
   });
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const startRoutine = useStartTodayRoutine();
-  const handleNfcScan = useHandleNfcScan();
   const { data: nfcTags } = useListNfcTags({ query: { queryKey: getListNfcTagsQueryKey() } });
+  const { data: checkpointsList } = useListCheckpoints({ query: { queryKey: getListCheckpointsQueryKey() } });
 
   const [completedName, setCompletedName] = useState<string | null>(null);
   const [lastApiError, setLastApiError] = useState<string | null>(null);
+  const [syncPending, setSyncPending] = useState(false);
+  const [stuckDialogSession, setStuckDialogSession] = useState<any>(null);
+  const dismissedStuckRef = useRef<Set<string>>(new Set());
   const prevInProgressRef = useRef<any>(null);
+  const hydratedRef = useRef(false);
+
+  // ── Restart recovery: hydrate from disk BEFORE any network response ──────
+  // Runs once, synchronously on first render of this component (i.e. on app
+  // boot / after force-close+reopen). If we already have a persisted local
+  // session cache and React Query hasn't populated real data yet, seed the
+  // cache from disk so the UI shows the correct active session immediately
+  // instead of a loading spinner or "no routine" flash while waiting for
+  // the network.
+  if (!hydratedRef.current) {
+    hydratedRef.current = true;
+    const existing = queryClient.getQueryData(getGetTodayRoutineQueryKey());
+    if (!existing) {
+      const cachedSessions = getCachedSessions();
+      const cachedRoutineId = getCachedRoutineId();
+      if (cachedRoutineId && cachedSessions.length > 0) {
+        queryClient.setQueryData(getGetTodayRoutineQueryKey(), {
+          id: cachedRoutineId,
+          status: "active",
+          sessions: cachedSessions,
+        });
+        console.debug("[Home] Restored session state from local storage after restart.");
+      }
+    }
+    const cachedCps = getCachedCheckpoints();
+    if (cachedCps.length > 0 && !queryClient.getQueryData(getListCheckpointsQueryKey())) {
+      queryClient.setQueryData(getListCheckpointsQueryKey(), cachedCps);
+    }
+  }
+
+  // Persist every successful server snapshot to disk so it survives restart.
+  useEffect(() => {
+    if (routine?.id && routine?.sessions) {
+      cacheSessions(routine.id, routine.sessions);
+    }
+  }, [routine]);
+
+  useEffect(() => {
+    if (checkpointsList && checkpointsList.length > 0) {
+      cacheCheckpoints(checkpointsList);
+    }
+  }, [checkpointsList]);
+
+  // Background sync loop — drains the offline queue every 15s and immediately on reconnect.
+  useEffect(() => {
+    const stop = startBackgroundSync(sendSyncEvent, 15000);
+    flushSyncQueue().catch(() => {});
+    return stop;
+  }, []);
+
+  // Ground-truth sync indicator — reflects the actual queue, not just the
+  // event we just fired, so it clears correctly once background retries succeed.
+  useEffect(() => {
+    const check = () => setSyncPending(pendingCount() > 0);
+    check();
+    const id = setInterval(check, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   const inProgressSession = routine?.sessions?.find((s: any) => s.status === "in_progress");
   const nextSession = routine?.sessions?.find((s: any) => s.status === "waiting");
@@ -263,96 +333,173 @@ export function Home() {
     return undefined;
   }, [inProgressSession]);
 
-  // ── NFC scan handler ───────────────────────────────────────────────────────
+  // ── Stuck-session detection ─────────────────────────────────────────────
+  // A session left in_progress far longer than any real checkpoint should
+  // take usually means something technical interrupted the user (app
+  // killed, phone died, NFC failure) rather than a 4-hour stretch. Ask,
+  // don't silently resolve it either way.
+  useEffect(() => {
+    if (!inProgressSession?.id) return;
+    const key = String(inProgressSession.id) + (inProgressSession.startedAt ?? "");
+    if (dismissedStuckRef.current.has(key)) return;
+    if (isSessionStuck(toLocalSession(inProgressSession))) {
+      setStuckDialogSession(inProgressSession);
+    }
+  }, [inProgressSession]);
+
+  const handleStuckResolution = (choice: "still_doing_it" | "finished" | "stopped" | "cancel") => {
+    const session = stuckDialogSession;
+    if (!session) return;
+    const key = String(session.id) + (session.startedAt ?? "");
+    dismissedStuckRef.current.add(key);
+    setStuckDialogSession(null);
+
+    if (choice === "still_doing_it") return; // no-op, keep going
+
+    if (choice === "finished") {
+      // Treat exactly like a real completion scan would, without requiring the tag.
+      handleLocalCheckpointResolution(session.checkpointId, "completed_via_recovery");
+      return;
+    }
+
+    if (choice === "stopped" || choice === "cancel") {
+      sessionAction.mutate(
+        { id: session.id, data: { action: "cancel" } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+            toast(choice === "cancel" ? "Session cancelled." : "Marked as stopped.");
+          },
+          onError: () => toast.error("Couldn't reach the server, but you can keep using the app — try again later."),
+        }
+      );
+    }
+  };
+
+  // ── NFC scan handler — LOCAL-FIRST ──────────────────────────────────────
+  // The device decides start/complete/repeat from its own cached session
+  // state immediately. The UI updates instantly. The backend is told in
+  // the background via the durable sync queue (src/lib/sync-queue.ts) and
+  // is never on the critical path — Render being down, slow, or returning
+  // HTTP 500 cannot leave the user stuck mid-checkpoint anymore.
   const [earlyWarningDialog, setEarlyWarningDialog] = useState<any>(null);
   const [bedModeDialog, setBedModeDialog] = useState<any>(null);
 
+  const applyLocalResult = useCallback(
+    (result: ReturnType<typeof processLocalScan>, checkpointId: number) => {
+      // 1. Update the UI instantly via the same React Query cache the
+      //    existing components already render from — no component below
+      //    this needed to change to become local-first. patchSessionsForUi
+      //    merges onto the previous full session objects so enrichment
+      //    fields (icon, location, isRequired, ...) survive on every
+      //    session that didn't actually change.
+      const patchedSessions = patchSessionsForUi(routine?.sessions ?? getCachedSessions(), result.sessions);
+      queryClient.setQueryData(getGetTodayRoutineQueryKey(), (old: any) => (old ? { ...old, sessions: patchedSessions } : old));
+      cacheSessions(routine?.id ?? getCachedRoutineId() ?? "unknown", patchedSessions);
+
+      // 2. Side effects that used to run in the mutation's onSuccess.
+      switch (result.action) {
+        case "started":
+        case "repeat_started":
+          if (result.session.checkpointType === "bed") {
+            const fullSession = patchedSessions.find((s: any) => String(s.id) === result.session.id) ?? toUiSession(result.session);
+            setBedModeDialog({ session: fullSession });
+          } else if (result.session.checkpointType === "leaving_home") {
+            toast.success("Leaving home recorded. Stay safe!");
+          } else {
+            toast(`${result.session.checkpointName} started. Park your phone.`);
+          }
+          if (result.session.targetDurationMinutes) {
+            notificationService.scheduleTimerEnd(result.session.checkpointName, result.session.targetDurationMinutes * 60);
+          }
+          break;
+        case "completed":
+          notificationService.cancelAll();
+          if (result.session.checkpointType === "leaving_home") {
+            toast.success("Safe travels! Door locked?");
+          } else {
+            toast.success(`${result.session.checkpointName} completed!`);
+          }
+          break;
+        case "early_complete_warning":
+          setEarlyWarningDialog({
+            sessionId: result.session.id,
+            checkpointName: result.session.checkpointName,
+            message: `You've been here a little while — minimum time hasn't passed yet.`,
+          });
+          return; // nothing to sync — no state changed
+      }
+
+      // 3. Durable local persistence + background sync — never required for
+      //    the checkpoint to be "real" from the user's perspective.
+      setSyncPending(true);
+      queueCheckpointScan(checkpointId, result.session.id, result.action, new Date().toISOString());
+    },
+    [queryClient, routine?.id]
+  );
+
+  const handleLocalCheckpointResolution = useCallback(
+    (checkpointId: number, _reason?: string) => {
+      const checkpoints = checkpointsList ?? getCachedCheckpoints();
+      const cp = checkpoints.find((c: any) => c.id === checkpointId);
+      if (!cp) {
+        toast.error("Unknown station — can't resolve locally.");
+        return;
+      }
+      const localCheckpoint = {
+        id: cp.id,
+        name: cp.name,
+        minDurationMinutes: cp.minDurationMinutes ?? 0,
+        targetDurationMinutes: cp.defaultDurationMinutes ?? 0,
+        completeOnFirstScan: !!cp.completeOnFirstScan,
+        checkpointType: cp.type,
+      };
+      const currentSessions = (routine?.sessions ?? []).map(toLocalSession);
+      const result = processLocalScan(currentSessions, localCheckpoint, String(routine?.id ?? getCachedRoutineId() ?? ""));
+      applyLocalResult(result, checkpointId);
+    },
+    [checkpointsList, routine, applyLocalResult]
+  );
+
   const handleScanResult = useCallback(
     (uid: string) => {
-      console.debug(`[Home] Initiating NFC scan API call for UID: ${uid}`);
+      console.debug(`[Home] NFC scan (local-first): UID ${uid}`);
       setLastApiError(null);
-      handleNfcScan.mutate(
-        { data: { tagUid: uid } },
-        {
-          onSuccess: (result: any) => {
-            console.debug(
-              `[Home] Scan API Success — action: ${result.action} | checkpoint: ${result.checkpointName}`
-            );
 
-            switch (result.action) {
-              case "started":
-                if (result.session?.checkpointType === "bed") {
-                  setBedModeDialog(result);
-                } else if (result.session?.checkpointType === "leaving_home") {
-                  toast.success("Leaving home recorded. Stay safe!");
-                } else {
-                  toast(`${result.checkpointName} started. Park your phone.`);
-                }
+      const checkpoints = checkpointsList ?? getCachedCheckpoints();
+      const checkpoint = resolveCheckpointFromTag(uid, nfcTags, checkpoints);
 
-                if (result.session?.targetDurationMinutes) {
-                  notificationService.scheduleTimerEnd(result.checkpointName, result.session.targetDurationMinutes * 60);
-                }
-                break;
-              case "completed":
-                notificationService.cancelAll();
-                if (result.session?.checkpointType === "leaving_home") {
-                    toast.success("Safe travels! Door locked?");
-                } else {
-                    toast.success(`${result.checkpointName} completed!`);
-                }
-                break;
-              case "early_complete_warning":
-                setEarlyWarningDialog(result);
-                return; // don't invalidate yet
-              case "unknown_tag":
-                toast(`Unknown tag: ${result.tagUid}`, {
-                  duration: 5000,
-                  action: {
-                    label: "Register",
-                    onClick: () => {
-                      // Redirect to nfc-tags with the UID
-                      window.location.href = `/nfc-tags?uid=${result.tagUid}`;
-                    }
-                  }
-                });
-                console.debug("[Home] Unknown tag — reason: no mapping", result.tagUid);
-                break;
-              case "no_checkpoint_assigned":
-                toast("Tag has no station assigned.", { duration: 2000 });
-                break;
-              case "debounced":
-                console.debug("[Home] Scan debounced by server");
-                return;
-              default:
-                break;
-            }
-
-            queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
+      if (!checkpoint) {
+        recordScanDiagnostics(uid, "unknown_tag");
+        toast(`Unknown tag: ${uid}`, {
+          duration: 5000,
+          action: {
+            label: "Register",
+            onClick: () => {
+              window.location.href = `/nfc-tags?uid=${uid}`;
+            },
           },
-          onError: (err: any) => {
-            console.error("[Home] CRITICAL Scan API error:", err);
-            let detail = "Unknown error";
+        });
+        console.debug("[Home] Unknown tag — not in local tag cache", uid);
+        return;
+      }
 
-            if (err.name === "ApiError") {
-                const data = err.data;
-                const message = data?.message || data?.error || err.message;
-                detail = `HTTP ${err.status}: ${message}`;
-                if (data?.details) {
-                    detail += `\n\nDetails: ${data.details}`;
-                }
-            } else {
-                detail = err.message || "Network failure";
-            }
-
-            setLastApiError(detail);
-            console.debug(`[Home] API Error Detail: ${detail}`);
-            toast.error("Scan failed. See error on screen.", { duration: 4000 });
-          },
-        }
-      );
+      try {
+        const currentSessions = (routine?.sessions ?? []).map(toLocalSession);
+        const result = processLocalScan(currentSessions, checkpoint, String(routine?.id ?? getCachedRoutineId() ?? ""));
+        console.debug(`[Home] Local decision — action: ${result.action} | checkpoint: ${checkpoint.name}`);
+        recordScanDiagnostics(uid, result.action);
+        applyLocalResult(result, checkpoint.id);
+      } catch (err: any) {
+        // A LOCAL failure (bad data, storage error) — genuinely different
+        // from a sync failure, and the one case that's still worth a loud
+        // error, since nothing was recorded anywhere.
+        console.error("[Home] Local scan processing failed:", err);
+        setLastApiError(`Local processing error: ${err?.message ?? "unknown"}`);
+        toast.error("Something went wrong reading that scan. Try again.");
+      }
     },
-    [handleNfcScan, queryClient]
+    [checkpointsList, nfcTags, routine, applyLocalResult]
   );
 
   const handleWrongStation = useCallback(() => {
@@ -429,7 +576,7 @@ export function Home() {
       <div className="flex-1 flex flex-col relative">
         {lastApiError && (
           <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
-            <p className="text-xs font-bold uppercase tracking-wider mb-1">API Error</p>
+            <p className="text-xs font-bold uppercase tracking-wider mb-1">Local Error</p>
             <p className="text-sm font-mono break-all">{lastApiError}</p>
             <button
               className="mt-2 text-[10px] underline"
@@ -466,7 +613,7 @@ export function Home() {
     <div className="flex-1 flex flex-col relative">
       {lastApiError && (
         <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
-          <p className="text-xs font-bold uppercase tracking-wider mb-1">API Error</p>
+          <p className="text-xs font-bold uppercase tracking-wider mb-1">Local Error</p>
           <p className="text-sm font-mono break-all">{lastApiError}</p>
           <button
             className="mt-2 text-[10px] underline"
@@ -475,6 +622,20 @@ export function Home() {
             Dismiss
           </button>
         </div>
+      )}
+
+      {/* Non-blocking sync status — the checkpoint is already saved locally;
+          this just means the backend hasn't confirmed it yet. Never blocks
+          the UI, per Phase 1 requirement #11. */}
+      {syncPending && !lastApiError && (
+        <div className="absolute top-4 left-4 right-4 z-40 bg-muted/95 backdrop-blur-sm text-muted-foreground text-xs px-3 py-2 rounded-xl shadow-sm flex items-center gap-2 animate-in slide-in-from-top-2">
+          <CloudOff size={13} className="shrink-0" />
+          <span>Saved on this device. Syncing with server…</span>
+        </div>
+      )}
+
+      {stuckDialogSession && (
+        <StuckSessionDialog session={stuckDialogSession} onChoice={handleStuckResolution} />
       )}
 
       {inProgressSession ? (
@@ -646,6 +807,37 @@ function BedModeDialog({
             >
               Cancel
             </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
+// ─── Stuck-session recovery ─────────────────────────────────────────────────
+// A session left in_progress far longer than reasonable (Phase 1 requirement
+// #8) — asks what actually happened instead of silently guessing, and never
+// erases anything without a clear action from the user.
+
+function StuckSessionDialog({ session, onChoice }: { session: any; onChoice: (choice: "still_doing_it" | "finished" | "stopped" | "cancel") => void }) {
+  const startedAt = session.startedAt ? new Date(session.startedAt) : null;
+  const hoursAgo = startedAt ? Math.round((Date.now() - startedAt.getTime()) / (60 * 60 * 1000)) : null;
+
+  return (
+    <DialogPrimitive.Root open={true} onOpenChange={(open) => !open && onChoice("still_doing_it")}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-[50%] top-[50%] z-50 w-[90%] max-w-sm translate-x-[-50%] translate-y-[-50%] bg-background p-6 shadow-xl rounded-3xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+          <h2 className="text-xl font-bold mb-2">Still on {session.checkpointName}?</h2>
+          <p className="text-sm text-muted-foreground mb-6">
+            {hoursAgo != null ? `You started this ${hoursAgo === 0 ? "less than an hour" : `${hoursAgo} hour${hoursAgo === 1 ? "" : "s"}`} ago.` : "This session has been active for a while."}
+            {" "}What happened?
+          </p>
+          <div className="flex flex-col gap-3">
+            <Button onClick={() => onChoice("still_doing_it")} className="rounded-2xl h-12">Still doing it</Button>
+            <Button variant="outline" className="rounded-2xl h-12" onClick={() => onChoice("finished")}>Finished but forgot to scan</Button>
+            <Button variant="outline" className="rounded-2xl h-12" onClick={() => onChoice("stopped")}>Stopped</Button>
+            <Button variant="ghost" className="rounded-2xl h-10 text-muted-foreground" onClick={() => onChoice("cancel")}>Cancel session</Button>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -8,13 +8,17 @@ import { getOrCreateTodayRoutine, enrichSession, updateRoutineCompletionStatus }
 const lastScanTime = new Map<number, number>(); // checkpointId → epoch ms
 const DEBOUNCE_MS = 2000;
 
-export async function processNfcScan(req: Request, checkpointId: number) {
-  req.log.info({ checkpointId }, "Processing NFC scan");
+export async function processNfcScan(req: Request, checkpointId: number, opts: { bypassDebounce?: boolean } = {}) {
+  req.log.info({ checkpointId, bypassDebounce: !!opts.bypassDebounce }, "Processing NFC scan");
 
-  // Debounce — same checkpoint scanned again within 2s → ignore
+  // Debounce — same checkpoint scanned again within 2s → ignore.
+  // Bypassed for sync-replayed events (routes/sync.ts): those already
+  // represent physically-distinct scans that were deduped on-device: two
+  // queued events for the same checkpoint can legitimately be processed
+  // back-to-back during a catch-up flush and must not be conflated.
   const now = Date.now();
   const last = lastScanTime.get(checkpointId) ?? 0;
-  if (now - last < DEBOUNCE_MS) {
+  if (!opts.bypassDebounce && now - last < DEBOUNCE_MS) {
     req.log.warn({ checkpointId, elapsed: now - last }, "Scan debounced");
     return {
       action: "debounced",

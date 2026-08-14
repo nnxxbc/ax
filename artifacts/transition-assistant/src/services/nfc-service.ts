@@ -81,6 +81,11 @@ class NFCService {
   private _lastScanTime = new Map<string, number>();
   private readonly DEBOUNCE_MS = 1500;
 
+  /** For the diagnostics screen — is a reader session currently open? */
+  isScanning(): boolean {
+    return this._scanning;
+  }
+
   /** True when running inside the Capacitor Android/iOS shell */
   isNative(): boolean {
     return (

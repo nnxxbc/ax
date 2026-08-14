@@ -26,6 +26,14 @@ async function runMigrations() {
 
       // settings updates
       "ALTER TABLE settings ADD COLUMN IF NOT EXISTS enforcement_level TEXT NOT NULL DEFAULT 'off';",
+
+      // event_log updates — offline sync idempotency key (see routes/sync.ts)
+      "ALTER TABLE event_log ADD COLUMN IF NOT EXISTS client_event_id TEXT;",
+      "DO $$ BEGIN " +
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'event_log_client_event_id_unique') THEN " +
+        "ALTER TABLE event_log ADD CONSTRAINT event_log_client_event_id_unique UNIQUE (client_event_id); " +
+        "END IF; " +
+      "END $$;",
     ];
 
     for (const cmd of migrationCommands) {
