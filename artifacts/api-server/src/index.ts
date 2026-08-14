@@ -15,7 +15,7 @@ async function runMigrations() {
     // Add 'type' to checkpoints if it doesn't exist
     await db.execute(sql`
       ALTER TABLE checkpoints
-      ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT \u0027standard\u0027;
+      ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'standard';
     `);
 
     logger.info("Migrations completed successfully.");

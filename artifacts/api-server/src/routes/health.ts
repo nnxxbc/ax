@@ -11,12 +11,12 @@ router.get("/healthz", async (_req, res) => {
     const result = await db.execute(sql`
       SELECT column_name
       FROM information_schema.columns
-      WHERE table_name \u003d \u0027checkpoint_sessions\u0027
+      WHERE table_name = 'checkpoint_sessions'
     `);
 
     res.json({
       status: "ok",
-      columns: result.rows.map(r \u003d\u003e r.column_name)
+      columns: result.rows.map(r => (r as any).column_name)
     });
   } catch (err: any) {
     res.status(500).json({ status: "error", message: err.message });
