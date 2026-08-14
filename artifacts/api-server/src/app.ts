@@ -39,11 +39,30 @@ app.use("/api", router);
 
 // Custom Error Handler
 app.use((err: any, req: any, res: any, next: any) => {
-  logger.error({ err, url: req.url, method: req.method }, "Unhandled API Error");
+  // Extract deep Postgres errors if they exist
+  const pgError = {
+    message: err.message,
+    code: err.code,
+    detail: err.detail,
+    hint: err.hint,
+    position: err.position,
+    where: err.where,
+    schema: err.schema,
+    table: err.table,
+    column: err.column,
+    dataType: err.dataType,
+    constraint: err.constraint,
+    stack: err.stack,
+  };
+
+  logger.error({ err: pgError, url: req.url, method: req.method }, "Unhandled API Error");
+
   res.status(err.status || 500).json({
     error: "UNHANDLED_ERROR",
     message: err.message,
-    details: err.stack,
+    details: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    pg_hint: err.hint,
+    pg_detail: err.detail,
   });
 });
 
