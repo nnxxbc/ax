@@ -122,8 +122,6 @@
     /* Soft overall background pattern/noise for warmth */
     background-image: radial-gradient(hsl(var(--muted)) 1px, transparent 1px);
     background-size: 24px 24px;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -135,8 +133,19 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-  
+
   .glass-panel {
     @apply bg-background/80 backdrop-blur-md border border-white/20 dark:border-black/20;
+  }
+
+  /* Keep app content clear of the phone's own status bar / gesture nav bar
+     (Android edge-to-edge draws the WebView full-screen behind both, so
+     these have to be applied directly to the elements that sit under
+     them — a fixed bottom nav ignores ancestor/body padding entirely). */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
