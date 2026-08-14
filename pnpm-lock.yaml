@@ -417,6 +417,9 @@ importers:
 
   artifacts/transition-assistant:
     dependencies:
+      '@capacitor-community/keep-awake':
+        specifier: ^8.0.1
+        version: 8.0.1(@capacitor/core@8.5.0)
       '@capacitor/android':
         specifier: ^8.5.0
         version: 8.5.0(@capacitor/core@8.5.0)
@@ -763,6 +766,11 @@ packages:
   '@babel/types@7.29.7':
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
+
+  '@capacitor-community/keep-awake@8.0.1':
+    resolution: {integrity: sha512-wTI5A6FWl5gWoMduzJ5euuJ1P73SO+rea0jV6vNdmz5TLbwIDhufelFe/GowNvU9gog6kDYbFhJ2pOp9ua1f3w==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/android@8.5.0':
     resolution: {integrity: sha512-Rb3prJeQiTp0pQhSSOReJuG9VgibOGMG4ECs+UhMwr6TCCHZ3NCZO811bDA0HxD0xrT/gCrJAsY5yfEATu84JQ==}
@@ -3567,6 +3575,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@capacitor-community/keep-awake@8.0.1(@capacitor/core@8.5.0)':
+    dependencies:
+      '@capacitor/core': 8.5.0
 
   '@capacitor/android@8.5.0(@capacitor/core@8.5.0)':
     dependencies:
