@@ -108,16 +108,29 @@ router.post("/nfc/scan", async (req, res): Promise<void> => {
     const result = await processNfcScan(req, tag.checkpointId);
     res.json(result);
   } catch (err: any) {
-    req.log.error({ err, stack: err.stack, body: req.body }, "CRITICAL NFC Scan error");
+    req.log.error({
+        err,
+        stack: err.stack,
+        cause: err.cause,
+        originalError: err.originalError,
+        body: req.body
+    }, "CRITICAL NFC Scan error");
+
+    const message = err.message || "Unknown error";
+    const details = err.stack || "No stack trace";
+
     try {
-        await logEvent(req, "nfc_scan_error", `Error: ${err.message}`, { details: err.stack });
+        await logEvent(req, "nfc_scan_error", `Error: ${message}`, { details });
     } catch (logErr) {
         req.log.error({ logErr }, "Failed to log error to database");
     }
+
     res.status(500).json({
       error: "NFC_SCAN_FAILED",
-      message: err.message,
-      details: err.stack,
+      message,
+      details,
+      pg_code: err.code,
+      pg_detail: err.detail
     });
   }
 });
