@@ -2,8 +2,22 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, checkpointsTable, checkpointSessionsTable, dailyRoutinesTable, settingsTable } from "@workspace/db";
 import { isScheduledForDay, dayOfWeekFromDateString, sortSessionsByCheckpointOrder } from "./schedule-helpers";
 
+/**
+ * "Today" is defined in Karen's local timezone (Asia/Tokyo), not UTC.
+ * Using UTC here used to mean the app's calendar day didn't roll over
+ * until 09:00 JST — so anything done between midnight and 9am JST (e.g.
+ * a 5am morning routine) was silently treated as still being the
+ * *previous* day, including day-of-week eligibility for things like
+ * "trash on Fri only". That's what caused trash/laundry to show up on
+ * the wrong day.
+ */
 export function getTodayDateString(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 export async function getOrCreateSettings() {
@@ -85,11 +99,24 @@ async function reconcileTodaySessions(routine: { id: number; date: string; energ
     .select()
     .from(checkpointSessionsTable)
     .where(eq(checkpointSessionsTable.routineId, routine.id));
-  const checkpointIdsWithSessions = new Set(existingSessions.map((s) => s.checkpointId));
+  // "cancelled" is what a session gets when the Frozen/stuck flow is
+  // abandoned mid-checkpoint — it's not a deliberate resolution the way
+  // completed/skipped/missed are, it just means an attempt got bailed on.
+  // A checkpoint whose only session(s) today are cancelled must NOT count
+  // as "already has a session" here, or it silently disappears from the
+  // guided "what's next" queue for the rest of the day — you can still
+  // reach it by manually re-scanning its tag (the flexible-repeat path),
+  // but the app stops guiding you to it, which is exactly what made foam
+  // roller and hygiene feel "skipped" this morning even though nothing
+  // was ever actually resolved for them.
+  const checkpointIdsWithLiveSessions = new Set(
+    existingSessions.filter((s) => s.status !== "cancelled").map((s) => s.checkpointId),
+  );
 
-  // Add sessions for newly-eligible checkpoints.
+  // Add sessions for newly-eligible checkpoints (including ones whose only
+  // prior session today was cancelled).
   for (const cp of checkpoints) {
-    if (!eligibleCheckpointIds.has(cp.id) || checkpointIdsWithSessions.has(cp.id)) continue;
+    if (!eligibleCheckpointIds.has(cp.id) || checkpointIdsWithLiveSessions.has(cp.id)) continue;
     await db.insert(checkpointSessionsTable).values({
       routineId: routine.id,
       checkpointId: cp.id,
