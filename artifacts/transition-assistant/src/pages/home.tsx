@@ -372,16 +372,34 @@ export function Home() {
     const check = () => {
       const now = new Date();
       const dismissedForDate = getJSON<string | null>("alarm_dismissed_date", null);
-      setAlarmActive(isAlarmActiveNow(settings, now, dateKey(now), dismissedForDate));
+      // "Test Alarm Now" (settings-alarm.tsx) sets this flag and sends the
+      // user here so the full lock-overlay + NFC-dismiss flow can be
+      // exercised end to end, not just the native sound in isolation.
+      const testing = getJSON<boolean>("test_alarm_active", false);
+      setAlarmActive(testing || isAlarmActiveNow(settings, now, dateKey(now), dismissedForDate));
     };
     check();
     const id = setInterval(check, 30000);
-    return () => clearInterval(id);
+    // The native alarm (AlarmRingService) can bring the app to the foreground
+    // via a full-screen-intent while it's already running (launchMode
+    // singleTask means no remount), so re-check immediately on resume rather
+    // than waiting up to 30s for the interval — the sound starts instantly
+    // either way, this is just about the lock overlay appearing promptly.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [settings?.alarmEnabled, settings?.alarmTime, JSON.stringify(settings?.alarmDaysOfWeek)]);
 
   const dismissAlarmForToday = useCallback(() => {
     setJSON("alarm_dismissed_date", dateKey(new Date()));
+    setJSON("test_alarm_active", false);
     setAlarmActive(false);
+    alarmService.stopRinging();
     toast.success("Alarm dismissed. Good morning!");
   }, []);
 

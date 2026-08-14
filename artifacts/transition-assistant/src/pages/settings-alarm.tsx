@@ -5,7 +5,10 @@ import { Link } from "wouter";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { alarmService } from "@/services/alarm-service";
+import { setJSON } from "@/lib/local-store";
 
 const DAYS = [
   { day: 0, label: "S" },
@@ -154,10 +157,31 @@ export function AlarmSettings() {
         </CardContent>
       </Card>
 
+      <Button
+        variant="outline"
+        className="rounded-2xl h-12"
+        onClick={async () => {
+          try {
+            // Exercises the full experience end to end (sound + lock overlay
+            // + NFC dismiss), not just the native sound in isolation — see
+            // the "test_alarm_active" flag check in home.tsx.
+            setJSON("test_alarm_active", true);
+            await alarmService.testRing();
+            toast.success("Ringing now — check your phone.");
+            window.location.href = "/";
+          } catch {
+            toast.error("Couldn't start the test alarm.");
+          }
+        }}
+      >
+        Test Alarm Now
+      </Button>
+
       <p className="text-xs text-muted-foreground px-2 leading-relaxed">
-        This schedules a real repeating OS notification for each selected day. If "Require NFC to dismiss" is on,
-        opening the app during the alarm window shows a full-screen lock until you scan — with a 5-second-hold
-        emergency dismiss so it can never fully trap you.
+        This is a real native alarm — it rings even if the app is closed or the phone is locked, and bypasses
+        silent/Do Not Disturb the same way your phone's built-in alarm clock does. If "Require NFC to dismiss" is
+        on, it only stops when you scan your tag — with a 5-second-hold emergency dismiss so it can never fully
+        trap you. Use "Test Alarm Now" above to verify it works on your phone without waiting for tomorrow morning.
       </p>
     </div>
   );

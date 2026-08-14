@@ -22,6 +22,8 @@ export interface AlarmSettingsSlice {
   alarmDaysOfWeek?: number[]; // 0=Sunday..6=Saturday
   alarmRequiresNfcDismissal?: boolean;
   alarmTargetCheckpointId?: number | null;
+  alarmSoundEnabled?: boolean;
+  alarmVibrationEnabled?: boolean;
 }
 
 /** 0=Sunday..6=Saturday -> Capacitor's Weekday enum value (Sunday=1..Saturday=7). */
