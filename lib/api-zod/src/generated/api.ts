@@ -47,8 +47,8 @@ export const ListCheckpointsResponse = zod.array(ListCheckpointsResponseItem)
 export const CreateCheckpointBody = zod.object({
   "name": zod.string(),
   "icon": zod.string(),
-  "description": zod.string().optional(),
-  "location": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "location": zod.string().nullish(),
   "order": zod.number(),
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
@@ -120,8 +120,8 @@ export const UpdateCheckpointParams = zod.object({
 export const UpdateCheckpointBody = zod.object({
   "name": zod.string().optional(),
   "icon": zod.string().optional(),
-  "description": zod.string().optional(),
-  "location": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "location": zod.string().nullish(),
   "order": zod.number().optional(),
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
