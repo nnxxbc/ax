@@ -100,7 +100,7 @@ export function Thoughts() {
         </div>
       ) : (
         <div className="flex flex-col gap-2 px-2">
-          {thoughts.map((th) => (
+          {thoughts.map((th: import("@/lib/thoughts-api").Thought) => (
             <div key={th.id} className="bg-card border border-border/40 rounded-2xl p-4">
               <p className="text-sm text-foreground mb-2 whitespace-pre-wrap">{th.content}</p>
               <div className="flex items-center justify-between">

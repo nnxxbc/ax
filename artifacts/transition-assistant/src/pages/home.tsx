@@ -388,7 +388,7 @@ export function Home() {
       prevWaitingIdRef.current = waitingId;
       if (waitingId && nextSession && !inProgressSession) {
         notificationService.scheduleTransitionReminder(
-          nextSession.checkpointName,
+          nextSession.checkpointName ?? "Station",
           settings.transitionReminderDelayMinutes ?? 15,
           settings,
         );
