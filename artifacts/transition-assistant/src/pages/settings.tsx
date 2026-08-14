@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Loader2, Volume2, Vibrate, Bell, Wrench, SmartphoneNfc, Clock, ChevronUp, ChevronDown, Pencil, Grid } from "lucide-react";
+import { Loader2, Volume2, Vibrate, Bell, Wrench, SmartphoneNfc, Clock, ChevronUp, ChevronDown, Pencil, Grid, AlarmClock, BellRing, MoonStar, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { LucideIcon } from "./checkpoint-icon";
@@ -111,6 +111,53 @@ export function Settings() {
               checked={!!settings.soundEnabled}
               onCheckedChange={(c: boolean) => handleToggle('soundEnabled', c)}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm border-border/40">
+          <CardContent className="p-0 divide-y divide-border/50">
+            <Link href="/settings/alarm" className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors active:bg-muted">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <AlarmClock size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Morning Alarm</h3>
+                <p className="text-sm text-muted-foreground">Persistent wake-up, NFC dismissal</p>
+              </div>
+            </Link>
+            <Link href="/settings/notifications" className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors active:bg-muted">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <BellRing size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Notification categories</h3>
+                <p className="text-sm text-muted-foreground">Timer, reminders, missed, check-ins</p>
+              </div>
+            </Link>
+            <Link href="/settings/quiet-hours" className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors active:bg-muted">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <MoonStar size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Quiet Hours</h3>
+                <p className="text-sm text-muted-foreground">Silence non-critical notifications</p>
+              </div>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <h2 className="px-2 text-sm font-semibold tracking-widest text-muted-foreground uppercase mt-6 mb-2">Capture</h2>
+        <Card className="shadow-sm border-border/40">
+          <CardContent className="p-0">
+            <Link href="/thoughts" className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors active:bg-muted">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <NotebookPen size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Thought Inbox</h3>
+                <p className="text-sm text-muted-foreground">Everything you've captured</p>
+              </div>
+            </Link>
           </CardContent>
         </Card>
 

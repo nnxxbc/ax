@@ -34,6 +34,7 @@ export const ListCheckpointsResponseItem = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -56,6 +57,7 @@ export const CreateCheckpointBody = zod.object({
   "isRepeatable": zod.boolean().optional(),
   "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish(),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -74,6 +76,7 @@ export const CreateCheckpointResponse = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -101,6 +104,7 @@ export const GetCheckpointResponse = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -126,6 +130,7 @@ export const UpdateCheckpointBody = zod.object({
   "isRepeatable": zod.boolean().optional(),
   "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish(),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -144,6 +149,7 @@ export const UpdateCheckpointResponse = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
+  "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -529,7 +535,21 @@ export const GetSettingsResponse = zod.object({
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
   "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
-  "developerModeEnabled": zod.boolean().optional()
+  "developerModeEnabled": zod.boolean().optional(),
+  "alarmDaysOfWeek": zod.array(zod.number()).optional().describe('0=Sunday..6=Saturday'),
+  "alarmRequiresNfcDismissal": zod.boolean().optional(),
+  "alarmTargetCheckpointId": zod.number().nullish(),
+  "alarmSoundEnabled": zod.boolean().optional(),
+  "alarmVibrationEnabled": zod.boolean().optional(),
+  "notifyTimerEnabled": zod.boolean().optional(),
+  "notifyTransitionRemindersEnabled": zod.boolean().optional(),
+  "transitionReminderDelayMinutes": zod.number().optional(),
+  "notifyMissedCheckpointEnabled": zod.boolean().optional(),
+  "notifyCheckInsEnabled": zod.boolean().optional(),
+  "checkInIntervalMinutes": zod.number().optional(),
+  "quietHoursEnabled": zod.boolean().optional(),
+  "quietHoursStart": zod.string().optional(),
+  "quietHoursEnd": zod.string().optional()
 })
 
 
@@ -549,7 +569,21 @@ export const UpdateSettingsBody = zod.object({
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
   "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
-  "developerModeEnabled": zod.boolean().optional()
+  "developerModeEnabled": zod.boolean().optional(),
+  "alarmDaysOfWeek": zod.array(zod.number()).optional().describe('0=Sunday..6=Saturday'),
+  "alarmRequiresNfcDismissal": zod.boolean().optional(),
+  "alarmTargetCheckpointId": zod.number().nullish(),
+  "alarmSoundEnabled": zod.boolean().optional(),
+  "alarmVibrationEnabled": zod.boolean().optional(),
+  "notifyTimerEnabled": zod.boolean().optional(),
+  "notifyTransitionRemindersEnabled": zod.boolean().optional(),
+  "transitionReminderDelayMinutes": zod.number().optional(),
+  "notifyMissedCheckpointEnabled": zod.boolean().optional(),
+  "notifyCheckInsEnabled": zod.boolean().optional(),
+  "checkInIntervalMinutes": zod.number().optional(),
+  "quietHoursEnabled": zod.boolean().optional(),
+  "quietHoursStart": zod.string().optional(),
+  "quietHoursEnd": zod.string().optional()
 })
 
 export const UpdateSettingsResponse = zod.object({
@@ -566,7 +600,21 @@ export const UpdateSettingsResponse = zod.object({
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
   "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
-  "developerModeEnabled": zod.boolean().optional()
+  "developerModeEnabled": zod.boolean().optional(),
+  "alarmDaysOfWeek": zod.array(zod.number()).optional().describe('0=Sunday..6=Saturday'),
+  "alarmRequiresNfcDismissal": zod.boolean().optional(),
+  "alarmTargetCheckpointId": zod.number().nullish(),
+  "alarmSoundEnabled": zod.boolean().optional(),
+  "alarmVibrationEnabled": zod.boolean().optional(),
+  "notifyTimerEnabled": zod.boolean().optional(),
+  "notifyTransitionRemindersEnabled": zod.boolean().optional(),
+  "transitionReminderDelayMinutes": zod.number().optional(),
+  "notifyMissedCheckpointEnabled": zod.boolean().optional(),
+  "notifyCheckInsEnabled": zod.boolean().optional(),
+  "checkInIntervalMinutes": zod.number().optional(),
+  "quietHoursEnabled": zod.boolean().optional(),
+  "quietHoursStart": zod.string().optional(),
+  "quietHoursEnd": zod.string().optional()
 })
 
 

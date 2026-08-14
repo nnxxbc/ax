@@ -34,6 +34,56 @@ async function runMigrations() {
         "ALTER TABLE event_log ADD CONSTRAINT event_log_client_event_id_unique UNIQUE (client_event_id); " +
         "END IF; " +
       "END $$;",
+
+      // ── Phase 3 ──────────────────────────────────────────────────────────
+      // checkpoints — per-checkpoint enforcement override
+      "ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS enforcement_override TEXT;",
+
+      // settings — morning alarm
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_days_of_week TEXT NOT NULL DEFAULT '[1,2,3,4,5]';",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_requires_nfc_dismissal BOOLEAN NOT NULL DEFAULT FALSE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_target_checkpoint_id INTEGER;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_sound_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_vibration_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+
+      // settings — unified notification preferences
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS notify_timer_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS notify_transition_reminders_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS transition_reminder_delay_minutes INTEGER NOT NULL DEFAULT 15;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS notify_missed_checkpoint_enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS notify_check_ins_enabled BOOLEAN NOT NULL DEFAULT FALSE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS check_in_interval_minutes INTEGER NOT NULL DEFAULT 120;",
+
+      // settings — quiet hours
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE;",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS quiet_hours_start TEXT NOT NULL DEFAULT '23:00';",
+      "ALTER TABLE settings ADD COLUMN IF NOT EXISTS quiet_hours_end TEXT NOT NULL DEFAULT '08:00';",
+
+      // thoughts — new table (Feature 4)
+      `CREATE TABLE IF NOT EXISTS thoughts (
+        id SERIAL PRIMARY KEY,
+        content TEXT NOT NULL,
+        category TEXT,
+        status TEXT NOT NULL DEFAULT 'inbox',
+        converted_checkpoint_id INTEGER,
+        converted_task_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT 'now()'
+      );`,
+
+      // frozen_events — new table (Features 7/8)
+      `CREATE TABLE IF NOT EXISTS frozen_events (
+        id SERIAL PRIMARY KEY,
+        bed_checkpoint_id INTEGER NOT NULL,
+        bed_session_id INTEGER,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        destination_checkpoint_id INTEGER,
+        steps_attempted TEXT NOT NULL DEFAULT '[]',
+        too_hard_count INTEGER NOT NULL DEFAULT 0,
+        successful_transition BOOLEAN NOT NULL DEFAULT FALSE,
+        recovery_duration_seconds INTEGER,
+        created_at TEXT NOT NULL DEFAULT 'now()'
+      );`,
     ];
 
     for (const cmd of migrationCommands) {

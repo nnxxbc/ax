@@ -21,6 +21,9 @@ export const checkpointsTable = pgTable("checkpoints", {
   isRepeatable: boolean("is_repeatable").notNull().default(true),
   // type: standard | bed | leaving_home
   type: text("type").notNull().default("standard"),
+  // Per-checkpoint enforcement override (Phase 3, Feature 5). null = inherit
+  // the global settings.enforcementLevel. One of: off | soft | focused | strict.
+  enforcementOverride: text("enforcement_override"),
   createdAt: text("created_at").notNull().default("now()"),
 });
 

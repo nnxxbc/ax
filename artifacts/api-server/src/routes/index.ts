@@ -10,6 +10,8 @@ import eventsRouter from "./events";
 import insightsRouter from "./insights";
 import debugRouter from "./debug";
 import syncRouter from "./sync";
+import thoughtsRouter from "./thoughts";
+import frozenRouter from "./frozen";
 
 const router: IRouter = Router();
 
@@ -24,5 +26,7 @@ router.use(eventsRouter);
 router.use(insightsRouter);
 router.use(debugRouter);
 router.use(syncRouter);
+router.use(thoughtsRouter);
+router.use(frozenRouter);
 
 export default router;

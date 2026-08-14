@@ -39,6 +39,9 @@ export interface Checkpoint {
   energyModes: string[];
   /** When true, the first NFC scan both starts and completes this checkpoint */
   completeOnFirstScan?: boolean;
+  /** Per-checkpoint override of the global enforcement level */
+  /** @nullable */
+  enforcementOverride?: AppSettingsEnforcementLevel | null;
   /** @nullable */
   nfcTagId?: number | null;
   createdAt: string;
@@ -57,6 +60,8 @@ export interface CheckpointInput {
   isRepeatable?: boolean;
   type?: CheckpointType;
   completeOnFirstScan?: boolean;
+  /** @nullable */
+  enforcementOverride?: AppSettingsEnforcementLevel | null;
   energyModes?: string[];
 }
 
@@ -73,6 +78,8 @@ export interface CheckpointUpdate {
   isRepeatable?: boolean;
   type?: CheckpointType;
   completeOnFirstScan?: boolean;
+  /** @nullable */
+  enforcementOverride?: AppSettingsEnforcementLevel | null;
   energyModes?: string[];
 }
 
@@ -303,6 +310,22 @@ export interface AppSettings {
   enforcementLevel?: AppSettingsEnforcementLevel;
   simulationModeEnabled?: boolean;
   developerModeEnabled?: boolean;
+  /** 0=Sunday..6=Saturday */
+  alarmDaysOfWeek?: number[];
+  alarmRequiresNfcDismissal?: boolean;
+  /** @nullable */
+  alarmTargetCheckpointId?: number | null;
+  alarmSoundEnabled?: boolean;
+  alarmVibrationEnabled?: boolean;
+  notifyTimerEnabled?: boolean;
+  notifyTransitionRemindersEnabled?: boolean;
+  transitionReminderDelayMinutes?: number;
+  notifyMissedCheckpointEnabled?: boolean;
+  notifyCheckInsEnabled?: boolean;
+  checkInIntervalMinutes?: number;
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
 }
 
 export type AppSettingsUpdateDefaultEnergyMode = typeof AppSettingsUpdateDefaultEnergyMode[keyof typeof AppSettingsUpdateDefaultEnergyMode];
@@ -328,6 +351,22 @@ export interface AppSettingsUpdate {
   enforcementLevel?: AppSettingsEnforcementLevel;
   simulationModeEnabled?: boolean;
   developerModeEnabled?: boolean;
+  /** 0=Sunday..6=Saturday */
+  alarmDaysOfWeek?: number[];
+  alarmRequiresNfcDismissal?: boolean;
+  /** @nullable */
+  alarmTargetCheckpointId?: number | null;
+  alarmSoundEnabled?: boolean;
+  alarmVibrationEnabled?: boolean;
+  notifyTimerEnabled?: boolean;
+  notifyTransitionRemindersEnabled?: boolean;
+  transitionReminderDelayMinutes?: number;
+  notifyMissedCheckpointEnabled?: boolean;
+  notifyCheckInsEnabled?: boolean;
+  checkInIntervalMinutes?: number;
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
 }
 
 export interface EventLogEntry {

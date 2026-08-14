@@ -2,9 +2,11 @@ import * as React from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Home, Grid, Calendar, Sparkles, Settings } from "lucide-react";
-import { useGetSettings, getGetSettingsQueryKey, useGetTodayRoutine, getGetTodayRoutineQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, getGetSettingsQueryKey, useGetTodayRoutine, getGetTodayRoutineQueryKey, useListCheckpoints, getListCheckpointsQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { EmergencyUnlock } from "./emergency-unlock";
+import { QuickCaptureFab } from "@/components/thought-capture/quick-capture-fab";
+import { effectiveEnforcementLevel } from "@/lib/enforcement";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -13,10 +15,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: routine } = useGetTodayRoutine({
     query: { queryKey: getGetTodayRoutineQueryKey(), refetchInterval: 5000 },
   });
+  const { data: checkpointsList } = useListCheckpoints({ query: { queryKey: getListCheckpointsQueryKey() } });
 
-  const inProgress = routine?.sessions?.some((s: any) => s.status === "in_progress");
-  const isStrict = settings?.enforcementLevel === "strict";
-  const isFocused = settings?.enforcementLevel === "focused";
+  const inProgressSession = routine?.sessions?.find((s: any) => s.status === "in_progress");
+  const inProgress = !!inProgressSession;
+
+  // Phase 3, Feature 5 — a per-checkpoint enforcement override (set on the
+  // Stations edit screen) takes precedence over the global settings level
+  // while that specific checkpoint is the one in progress.
+  const activeCheckpoint = (Array.isArray(checkpointsList) ? checkpointsList : []).find(
+    (c: any) => c.id === inProgressSession?.checkpointId,
+  );
+  const effectiveLevel = effectiveEnforcementLevel(settings?.enforcementLevel, activeCheckpoint?.enforcementOverride);
+  const isStrict = effectiveLevel === "strict";
+  const isFocused = effectiveLevel === "focused";
 
   // Phase 1 requirement #9 — strict mode must never trap the user because
   // of an app bug. A 5s hold on the always-present EmergencyUnlock control
@@ -53,6 +65,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {isStrict && inProgress && !emergencyUnlocked && (
         <EmergencyUnlock onUnlock={() => setEmergencyUnlocked(true)} />
       )}
+
+      {/* Phase 3, Feature 4 — global capture entry point. Hidden during a
+          strict-mode navigation lock so it doesn't undermine that mode's
+          intent; the morning alarm's full-screen overlay (rendered inside
+          Home, z-[80]) already visually covers this regardless. */}
+      <QuickCaptureFab hidden={navDisabled} />
     </div>
   );
 }

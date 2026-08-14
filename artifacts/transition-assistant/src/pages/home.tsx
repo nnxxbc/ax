@@ -23,6 +23,12 @@ import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 import { nfcService } from "@/services/nfc-service";
 import { notificationService } from "@/services/notification-service";
+import { alarmService } from "@/services/alarm-service";
+import { isAlarmActiveNow, dateKey } from "@/lib/alarm-rules";
+import { getJSON, setJSON } from "@/lib/local-store";
+import { effectiveEnforcementLevel } from "@/lib/enforcement";
+import { useStartFrozenEvent, useAppendFrozenStep, useCompleteFrozenEvent } from "@/lib/frozen-api";
+import { advanceFrozenStage } from "@/lib/frozen-protocol-rules";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { processLocalScan, isSessionStuck, type LocalSession } from "@/lib/nfc-state-machine";
@@ -322,6 +328,76 @@ export function Home() {
     notificationService.requestPermissions();
   }, []);
 
+  // Phase 3, Feature 1 — Persistent Morning Alarm. Reschedule the OS-level
+  // weekly notifications whenever alarm settings change, and separately
+  // track whether the in-app lock overlay should be showing right now
+  // (re-checked every 30s since it's purely time-based).
+  const [alarmActive, setAlarmActive] = useState(false);
+  useEffect(() => {
+    if (!settings) return;
+    alarmService.requestPermissions();
+    alarmService.reschedule(settings).catch((err) => console.error("[Home] alarmService.reschedule failed:", err));
+  }, [
+    settings?.alarmEnabled,
+    settings?.alarmTime,
+    settings?.alarmRequiresNfcDismissal,
+    settings?.alarmSoundEnabled,
+    settings?.alarmVibrationEnabled,
+    settings?.alarmTargetCheckpointId,
+    JSON.stringify(settings?.alarmDaysOfWeek),
+  ]);
+
+  useEffect(() => {
+    if (!settings) return;
+    const check = () => {
+      const now = new Date();
+      const dismissedForDate = getJSON<string | null>("alarm_dismissed_date", null);
+      setAlarmActive(isAlarmActiveNow(settings, now, dateKey(now), dismissedForDate));
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [settings?.alarmEnabled, settings?.alarmTime, JSON.stringify(settings?.alarmDaysOfWeek)]);
+
+  const dismissAlarmForToday = useCallback(() => {
+    setJSON("alarm_dismissed_date", dateKey(new Date()));
+    setAlarmActive(false);
+    toast.success("Alarm dismissed. Good morning!");
+  }, []);
+
+  // Phase 3, Feature 2 — Check-in category has no native "every N minutes"
+  // OS trigger available, so it's re-armed opportunistically: on mount, and
+  // whenever the app comes back to the foreground.
+  useEffect(() => {
+    if (!settings) return;
+    notificationService.armCheckIn(settings);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") notificationService.armCheckIn(settings);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [settings?.notifyCheckInsEnabled, settings?.checkInIntervalMinutes, settings?.quietHoursEnabled, settings?.quietHoursStart, settings?.quietHoursEnd]);
+
+  // Phase 3, Feature 2 — Transition reminder: a gentler nudge some minutes
+  // after a checkpoint becomes "waiting" (next up) but hasn't been started.
+  const prevWaitingIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!settings) return;
+    const waitingId = nextSession ? String(nextSession.id) : null;
+    if (waitingId !== prevWaitingIdRef.current) {
+      prevWaitingIdRef.current = waitingId;
+      if (waitingId && nextSession && !inProgressSession) {
+        notificationService.scheduleTransitionReminder(
+          nextSession.checkpointName,
+          settings.transitionReminderDelayMinutes ?? 15,
+          settings,
+        );
+      } else {
+        notificationService.cancelTransitionReminder();
+      }
+    }
+  }, [nextSession?.id, inProgressSession, settings]);
+
   useEffect(() => {
     const prev = prevInProgressRef.current;
     if (prev && !inProgressSession) {
@@ -385,6 +461,42 @@ export function Home() {
   const [earlyWarningDialog, setEarlyWarningDialog] = useState<any>(null);
   const [bedModeDialog, setBedModeDialog] = useState<any>(null);
 
+  // Phase 3, Features 7/8 — Frozen Protocol event tracking. Lifted to Home
+  // (rather than owned by the leaf InProgressView) because Home is already
+  // the single place session completions are handled (see the "completed"
+  // case in applyLocalResult below), which is where a frozen event's
+  // recovery-duration/success gets logged.
+  const [frozenEventId, setFrozenEventId] = useState<number | null>(null);
+  const [frozenStage, setFrozenStage] = useState<1 | 2 | 3 | 4>(1);
+  const [frozenDestinationId, setFrozenDestinationId] = useState<number | null>(null);
+  const startFrozenEvent = useStartFrozenEvent();
+  const appendFrozenStep = useAppendFrozenStep();
+  const completeFrozenEvent = useCompleteFrozenEvent();
+
+  useEffect(() => {
+    if (inProgressSession?.mode === "frozen" && frozenEventId == null) {
+      setFrozenStage(1);
+      setFrozenDestinationId(null);
+      startFrozenEvent.mutate(
+        { bedCheckpointId: inProgressSession.checkpointId, bedSessionId: Number(inProgressSession.id) || undefined },
+        { onSuccess: (ev) => setFrozenEventId(ev.id) },
+      );
+    } else if (inProgressSession?.mode !== "frozen" && frozenEventId != null) {
+      // Left frozen mode without going through our own "complete" handling
+      // below (e.g. the session was cancelled) — clear tracking so the next
+      // frozen session starts its own event rather than appending to a stale one.
+      setFrozenEventId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inProgressSession?.id, inProgressSession?.mode]);
+
+  const logFrozenStep = useCallback(
+    (step: string) => {
+      if (frozenEventId != null) appendFrozenStep.mutate({ id: frozenEventId, step });
+    },
+    [frozenEventId, appendFrozenStep],
+  );
+
   const applyLocalResult = useCallback(
     (result: ReturnType<typeof processLocalScan>, checkpointId: number) => {
       // 1. Update the UI instantly via the same React Query cache the
@@ -409,8 +521,9 @@ export function Home() {
           } else {
             toast(`${result.session.checkpointName} started. Park your phone.`);
           }
+          notificationService.cancelTransitionReminder();
           if (result.session.targetDurationMinutes) {
-            notificationService.scheduleTimerEnd(result.session.checkpointName, result.session.targetDurationMinutes * 60);
+            notificationService.scheduleTimerEnd(result.session.checkpointName, result.session.targetDurationMinutes * 60, settings);
           }
           break;
         case "completed":
@@ -419,6 +532,15 @@ export function Home() {
             toast.success("Safe travels! Door locked?");
           } else {
             toast.success(`${result.session.checkpointName} completed!`);
+          }
+          // Phase 3, Features 7/8 — a frozen session completing via the
+          // normal scan-to-complete flow (stage 4 of the protocol) is a
+          // successful transition; log it for future Insights.
+          if (result.session.mode === "frozen" && frozenEventId != null) {
+            completeFrozenEvent.mutate({ id: frozenEventId, destinationCheckpointId: frozenDestinationId });
+            setFrozenEventId(null);
+            setFrozenStage(1);
+            setFrozenDestinationId(null);
           }
           break;
         case "early_complete_warning":
@@ -435,7 +557,7 @@ export function Home() {
       setSyncPending(true);
       queueCheckpointScan(checkpointId, result.session.id, result.action, new Date().toISOString());
     },
-    [queryClient, routine?.id]
+    [queryClient, routine?.id, settings, frozenEventId, frozenDestinationId, completeFrozenEvent]
   );
 
   const handleLocalCheckpointResolution = useCallback(
@@ -469,6 +591,16 @@ export function Home() {
       const checkpoints = checkpointsList ?? getCachedCheckpoints();
       const checkpoint = resolveCheckpointFromTag(uid, nfcTags, checkpoints);
 
+      // Phase 3, Feature 1 — a scan that resolves to the configured alarm
+      // checkpoint (or any known checkpoint, if none is configured) during
+      // the active alarm window dismisses it. This runs as a side effect
+      // alongside whatever normal checkpoint processing happens below —
+      // the alarm's target tag is very likely also a real routine
+      // checkpoint, so this must not swallow or replace that flow.
+      if (alarmActive && checkpoint && (!settings?.alarmTargetCheckpointId || checkpoint.id === settings.alarmTargetCheckpointId)) {
+        dismissAlarmForToday();
+      }
+
       if (!checkpoint) {
         recordScanDiagnostics(uid, "unknown_tag");
         toast(`Unknown tag: ${uid}`, {
@@ -499,7 +631,7 @@ export function Home() {
         toast.error("Something went wrong reading that scan. Try again.");
       }
     },
-    [checkpointsList, nfcTags, routine, applyLocalResult]
+    [checkpointsList, nfcTags, routine, applyLocalResult, alarmActive, settings, dismissAlarmForToday]
   );
 
   const handleWrongStation = useCallback(() => {
@@ -548,6 +680,17 @@ export function Home() {
       }
     );
   };
+
+  // Phase 3, Feature 1 — while the alarm is active and NFC dismissal is
+  // required, the lock overlay takes over the whole screen. This is an
+  // early return placed after every hook call in this component (Rules of
+  // Hooks), not a wrapping branch — useHomeNfc's listener stays alive
+  // underneath since Home itself never unmounts, so the same scan that
+  // dismisses the alarm can also complete a real checkpoint via the normal
+  // handleScanResult path.
+  if (alarmActive && settings?.alarmRequiresNfcDismissal) {
+    return <AlarmLockOverlay onEmergencyDismiss={dismissAlarmForToday} />;
+  }
 
   if (isLoading) {
     return (
@@ -609,6 +752,14 @@ export function Home() {
 
   const freezeThreshold = settings?.freezeStuckThresholdSeconds ?? 30;
 
+  // Phase 3, Feature 5 — resolve enforcement per the checkpoint actually
+  // being shown (in-progress or waiting), falling back to the global level.
+  const checkpointsForEnforcement = checkpointsList ?? getCachedCheckpoints();
+  const inProgressCheckpoint = checkpointsForEnforcement.find((c: any) => c.id === inProgressSession?.checkpointId);
+  const nextCheckpoint = checkpointsForEnforcement.find((c: any) => c.id === nextSession?.checkpointId);
+  const inProgressEnforcement = effectiveEnforcementLevel(settings?.enforcementLevel, inProgressCheckpoint?.enforcementOverride);
+  const nextEnforcement = effectiveEnforcementLevel(settings?.enforcementLevel, nextCheckpoint?.enforcementOverride);
+
   return (
     <div className="flex-1 flex flex-col relative">
       {lastApiError && (
@@ -641,7 +792,17 @@ export function Home() {
       {inProgressSession ? (
         <>
           <div className="flex-1 flex flex-col">
-            <InProgressView session={inProgressSession} onScanResult={handleScanResult} enforcementLevel={settings?.enforcementLevel ?? 'off'} />
+            <InProgressView
+              session={inProgressSession}
+              onScanResult={handleScanResult}
+              enforcementLevel={inProgressEnforcement}
+              frozenStage={frozenStage}
+              setFrozenStage={setFrozenStage}
+              frozenDestinationId={frozenDestinationId}
+              setFrozenDestinationId={setFrozenDestinationId}
+              logFrozenStep={logFrozenStep}
+              destinationOptions={checkpointsForEnforcement}
+            />
             {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
           </div>
 
@@ -666,7 +827,7 @@ export function Home() {
       ) : nextSession ? (
         <>
           <div className="flex-1 flex flex-col">
-            <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={settings?.enforcementLevel ?? 'off'} />
+            <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={nextEnforcement} />
             {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
           </div>
 
@@ -772,7 +933,12 @@ function BedModeDialog({
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
-          toast.success(mode === "working_from_bed" ? "Intentional bed work started." : "Transition support active.");
+          const messages: Record<string, string> = {
+            working_from_bed: "Intentional bed work started.",
+            resting: "Rest logged. No pressure.",
+            frozen: "Transition support active.",
+          };
+          toast.success(messages[mode] ?? "Bed mode set.");
           onClose();
         },
       }
@@ -794,9 +960,16 @@ function BedModeDialog({
               Working from bed
             </Button>
             <Button
-              onClick={() => handleAction("frozen")}
+              onClick={() => handleAction("resting")}
               variant="outline"
               className="rounded-2xl h-14"
+            >
+              Just resting
+            </Button>
+            <Button
+              onClick={() => handleAction("frozen")}
+              variant="outline"
+              className="rounded-2xl h-14 border-destructive/30 text-destructive hover:bg-destructive/5"
             >
               I am frozen / stuck
             </Button>
@@ -842,6 +1015,74 @@ function StuckSessionDialog({ session, onChoice }: { session: any; onChoice: (ch
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  );
+}
+
+/**
+ * Phase 3, Feature 1 — the in-app half of the persistent morning alarm.
+ * The OS notification alone can be swiped away; this full-screen overlay
+ * re-asserts itself whenever the app is opened during the alarm window,
+ * until dismissed via NFC (normal flow, see handleScanResult) or the
+ * emergency fallback below (same 5-second-hold pattern as Phase 1's
+ * EmergencyUnlock, since a persistent lock must never become a real trap).
+ */
+function AlarmLockOverlay({ onEmergencyDismiss }: { onEmergencyDismiss: () => void }) {
+  const [holding, setHolding] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const HOLD_MS = 5000;
+  const TICK_MS = 100;
+
+  const clear = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    setHolding(false);
+    setProgress(0);
+  };
+
+  const start = () => {
+    setHolding(true);
+    const startedAt = Date.now();
+    timerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const pct = Math.min(1, elapsed / HOLD_MS);
+      setProgress(pct);
+      if (pct >= 1) {
+        clear();
+        console.warn("[AlarmLockOverlay] Emergency dismiss used.");
+        onEmergencyDismiss();
+      }
+    }, TICK_MS);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-background flex flex-col items-center justify-center px-8 text-center animate-in fade-in duration-300">
+      <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+        <AlertCircle size={40} className="text-primary" strokeWidth={1.5} />
+      </div>
+      <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-muted-foreground mb-2">Morning Alarm</p>
+      <h1 className="text-3xl font-bold tracking-tight mb-4">Time to get up.</h1>
+      <p className="text-sm text-muted-foreground mb-12 max-w-xs">
+        Scan your morning tag to dismiss.
+      </p>
+
+      <button
+        className="w-16 h-16 rounded-full bg-muted border border-border flex items-center justify-center active:scale-95 transition-transform"
+        style={{
+          background: holding
+            ? `conic-gradient(hsl(var(--destructive)) ${progress * 360}deg, hsl(var(--muted)) 0deg)`
+            : undefined,
+        }}
+        onPointerDown={start}
+        onPointerUp={clear}
+        onPointerLeave={clear}
+        onPointerCancel={clear}
+        aria-label="Emergency dismiss — hold 5 seconds"
+      >
+        <AlertCircle size={20} className={holding ? "text-destructive-foreground" : "text-muted-foreground"} />
+      </button>
+      <p className="text-[10px] text-muted-foreground/70 mt-3 uppercase tracking-wider">Hold 5s — emergency dismiss</p>
+    </div>
   );
 }
 
@@ -970,12 +1211,200 @@ function WaitingView({ session, freezeThresholdSeconds, enforcementLevel }: { se
   );
 }
 
-function InProgressView({ session, onScanResult: _onScanResult, enforcementLevel }: { session: any; onScanResult?: (uid: string) => void; enforcementLevel: string }) {
+/**
+ * Phase 3, Features 7/8 — the Frozen Protocol. Four deliberately tiny
+ * stages, in order: reduce demand -> change body state -> choose a
+ * destination -> complete via NFC (stage 4 doesn't have its own "done"
+ * button — it reuses the exact same scan-the-tag-again mechanic every
+ * other in-progress checkpoint already uses, via useHomeNfc/handleScanResult
+ * at the Home level; this component only guides the first three stages and
+ * then gets out of the way). Every meaningful choice is logged via logStep
+ * for Feature 8's future-Insights data, but nothing here blocks on that —
+ * if the log call fails, the protocol still proceeds locally.
+ */
+const BODY_STATE_ACTIONS = [
+  { key: "wiggle_toes", label: "Wiggle your toes" },
+  { key: "feet_on_floor", label: "Put both feet on the floor" },
+  { key: "sit_up", label: "Sit up" },
+  { key: "one_deep_breath", label: "Take one deep breath" },
+];
+
+function FrozenProtocolView({
+  session,
+  stage,
+  setStage,
+  destinationId,
+  setDestinationId,
+  logStep,
+  destinationOptions,
+}: {
+  session: any;
+  stage: 1 | 2 | 3 | 4;
+  setStage: (s: 1 | 2 | 3 | 4) => void;
+  destinationId: number | null;
+  setDestinationId: (id: number | null) => void;
+  logStep: (step: string) => void;
+  destinationOptions: any[];
+}) {
+  const otherStations = destinationOptions.filter((c: any) => c.id !== session.checkpointId);
+
+  const advance = (step: string, event: Parameters<typeof advanceFrozenStage>[1]) => {
+    logStep(step);
+    setStage(advanceFrozenStage(stage, event));
+  };
+
+  return (
+    <div className="flex-1 flex flex-col animate-in fade-in duration-500 bg-primary/[0.03]">
+      <div className="flex justify-center pt-8 pb-2">
+        <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-destructive bg-destructive/10 px-4 py-1.5 rounded-full">
+          Transition Support
+        </span>
+      </div>
+
+      {/* 4-dot stage progress */}
+      <div className="flex justify-center gap-1.5 pt-3">
+        {[1, 2, 3, 4].map((s) => (
+          <span key={s} className={`w-1.5 h-1.5 rounded-full ${s <= stage ? "bg-destructive" : "bg-border"}`} />
+        ))}
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+        {stage === 1 && (
+          <>
+            <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-3">Stage 1 of 4</p>
+            <h1 className="text-3xl font-bold tracking-tight mb-4">You're stuck. That's okay.</h1>
+            <p className="text-sm text-muted-foreground mb-10 max-w-xs">
+              Nothing needs to happen fast. This isn't about the whole routine — just the next thirty seconds.
+            </p>
+            <button
+              onClick={() => advance("stage1:acknowledged", "stage1_acknowledged")}
+              className="w-full max-w-xs h-14 rounded-2xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform"
+            >
+              Okay
+            </button>
+          </>
+        )}
+
+        {stage === 2 && (
+          <>
+            <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-3">Stage 2 of 4</p>
+            <h1 className="text-2xl font-bold tracking-tight mb-6">Just move one thing.</h1>
+            <div className="flex flex-col gap-3 w-full max-w-xs mb-4">
+              {BODY_STATE_ACTIONS.map((a) => (
+                <button
+                  key={a.key}
+                  onClick={() => advance(`stage2:${a.key}`, "stage2_action_done")}
+                  className="bg-card border border-border/60 rounded-2xl px-4 py-4 text-sm font-semibold text-foreground shadow-sm active:scale-[0.98] transition-transform"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => advance("stage2:too_hard", "stage2_too_hard")}
+              className="text-xs text-muted-foreground underline underline-offset-4"
+            >
+              Even that's too hard right now
+            </button>
+          </>
+        )}
+
+        {stage === 3 && (
+          <>
+            <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-3">Stage 3 of 4</p>
+            <h1 className="text-2xl font-bold tracking-tight mb-6">Where are you headed?</h1>
+            <div className="flex flex-col gap-3 w-full max-w-xs mb-4 max-h-[40vh] overflow-y-auto no-scrollbar">
+              {otherStations.map((cp: any) => (
+                <button
+                  key={cp.id}
+                  onClick={() => {
+                    setDestinationId(cp.id);
+                    advance(`stage3:destination:${cp.id}`, "stage3_destination_chosen");
+                  }}
+                  className={`rounded-2xl px-4 py-4 text-sm font-semibold text-left transition-transform active:scale-[0.98] ${
+                    destinationId === cp.id ? "bg-primary/10 text-primary border border-primary/30" : "bg-card border border-border/60 text-foreground shadow-sm"
+                  }`}
+                >
+                  {cp.name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setDestinationId(null);
+                advance("stage3:destination:unspecified", "stage3_unspecified");
+              }}
+              className="text-xs text-muted-foreground underline underline-offset-4"
+            >
+              Not sure yet
+            </button>
+          </>
+        )}
+
+        {stage === 4 && (
+          <>
+            <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-3">Stage 4 of 4</p>
+            <h1 className="text-2xl font-bold tracking-tight mb-6">Ready when you are.</h1>
+            <div className="w-full max-w-xs rounded-3xl border-2 border-dashed border-border p-6 flex flex-col items-center gap-2 mb-4">
+              <Smartphone size={28} className="text-muted-foreground" strokeWidth={1.5} />
+              <p className="font-bold tracking-widest text-xs uppercase text-primary">Scan to clear</p>
+              <p className="text-sm text-muted-foreground text-center">
+                Scan the <strong>same NFC tag</strong> again once you're up.
+              </p>
+            </div>
+            <button
+              onClick={() => setStage(advanceFrozenStage(stage, "stage4_back"))}
+              className="text-xs text-muted-foreground underline underline-offset-4"
+            >
+              Back
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InProgressView({
+  session,
+  onScanResult: _onScanResult,
+  enforcementLevel,
+  frozenStage,
+  setFrozenStage,
+  frozenDestinationId,
+  setFrozenDestinationId,
+  logFrozenStep,
+  destinationOptions,
+}: {
+  session: any;
+  onScanResult?: (uid: string) => void;
+  enforcementLevel: string;
+  frozenStage?: 1 | 2 | 3 | 4;
+  setFrozenStage?: (s: 1 | 2 | 3 | 4) => void;
+  frozenDestinationId?: number | null;
+  setFrozenDestinationId?: (id: number | null) => void;
+  logFrozenStep?: (step: string) => void;
+  destinationOptions?: any[];
+}) {
   const sessionAction = useSessionAction();
   const queryClient = useQueryClient();
 
   const isFrozen = session.mode === "frozen";
   const isFocused = enforcementLevel === "focused";
+
+  if (isFrozen) {
+    return (
+      <FrozenProtocolView
+        session={session}
+        stage={frozenStage ?? 1}
+        setStage={setFrozenStage ?? (() => {})}
+        destinationId={frozenDestinationId ?? null}
+        setDestinationId={setFrozenDestinationId ?? (() => {})}
+        logStep={logFrozenStep ?? (() => {})}
+        destinationOptions={destinationOptions ?? []}
+      />
+    );
+  }
 
   const serverTargetMins = isFrozen ? 0 : (session.targetDurationMinutes || session.checkpointDefaultDurationMinutes || 0);
   const minMins = isFrozen ? 0 : (session.minDurationMinutes || session.checkpointMinDurationMinutes || 0);
@@ -1018,6 +1447,10 @@ function InProgressView({ session, onScanResult: _onScanResult, enforcementLevel
       {
         onSuccess: (updatedSession) => {
             const totalRemainingSecs = (updatedSession.targetDurationMinutes || 0) * 60 - elapsed;
+            // Note: settings isn't threaded into this leaf component, so this
+            // extend-time reschedule doesn't re-check quiet hours — matches
+            // the original session's gating, which was already applied when
+            // the timer was first scheduled from applyLocalResult() above.
             notificationService.scheduleTimerEnd(session.checkpointName, totalRemainingSecs);
         },
         onError: () => {
@@ -1063,20 +1496,13 @@ function InProgressView({ session, onScanResult: _onScanResult, enforcementLevel
         </div>
 
         <h1 className="font-extrabold tracking-tight leading-none mb-8" style={{ fontSize: "clamp(2.5rem, 12vw, 4.5rem)" }}>
-          {isFrozen ? "TRANSITION SUPPORT" : parts.map((part, i) => (
+          {parts.map((part, i) => (
             <span key={i} className="block">
               {i > 0 && <span className="block text-2xl text-muted-foreground font-normal my-1">+</span>}
               {part.toUpperCase()}
             </span>
           ))}
         </h1>
-
-        {isFrozen && (
-          <div className="mb-8 px-4 py-3 bg-destructive/5 border border-destructive/10 rounded-2xl">
-            <p className="text-sm text-destructive font-medium">You're stuck. That's okay.</p>
-            <p className="text-xs text-muted-foreground mt-1">Just focus on moving one limb. Then stand up when you're ready. Scan the tag to clear this.</p>
-          </div>
-        )}
 
         {targetReached ? (
           <div className="mb-6 text-center">

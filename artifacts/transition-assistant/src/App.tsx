@@ -10,6 +10,10 @@ import { NfcTags } from "@/pages/nfc-tags";
 import { Insights } from "@/pages/insights";
 import { Dev } from "@/pages/dev";
 import { Checkpoints } from "@/pages/checkpoints";
+import { Thoughts } from "@/pages/thoughts";
+import { AlarmSettings } from "@/pages/settings-alarm";
+import { NotificationSettings } from "@/pages/settings-notifications";
+import { QuietHoursSettings } from "@/pages/settings-quiet-hours";
 import { Toaster } from "@/components/ui/sonner";
 
 const queryClient = new QueryClient();
@@ -37,6 +41,10 @@ function Router() {
         <Route path="/nfc-tags" component={NfcTags} />
         <Route path="/checkpoints" component={Checkpoints} />
         <Route path="/insights" component={Insights} />
+        <Route path="/thoughts" component={Thoughts} />
+        <Route path="/settings/alarm" component={AlarmSettings} />
+        <Route path="/settings/notifications" component={NotificationSettings} />
+        <Route path="/settings/quiet-hours" component={QuietHoursSettings} />
         <Route path="/dev" component={Dev} />
         <Route component={NotFound} />
       </Switch>
