@@ -42,6 +42,8 @@ export interface Checkpoint {
   /** Per-checkpoint override of the global enforcement level */
   /** @nullable */
   enforcementOverride?: AppSettingsEnforcementLevel | null;
+  /** 0=Sunday..6=Saturday. Empty array means every day. */
+  daysOfWeek: number[];
   /** @nullable */
   nfcTagId?: number | null;
   createdAt: string;
@@ -62,6 +64,8 @@ export interface CheckpointInput {
   completeOnFirstScan?: boolean;
   /** @nullable */
   enforcementOverride?: AppSettingsEnforcementLevel | null;
+  /** 0=Sunday..6=Saturday. Empty/omitted means every day. */
+  daysOfWeek?: number[];
   energyModes?: string[];
 }
 
@@ -71,6 +75,8 @@ export interface CheckpointUpdate {
   description?: string;
   location?: string;
   order?: number;
+  /** 0=Sunday..6=Saturday. Empty/omitted means every day. */
+  daysOfWeek?: number[];
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;

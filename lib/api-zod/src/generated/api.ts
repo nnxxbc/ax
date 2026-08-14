@@ -35,6 +35,7 @@ export const ListCheckpointsResponseItem = zod.object({
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
+  "daysOfWeek": zod.array(zod.number()).describe('0=Sunday..6=Saturday. Empty array means every day.'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -58,6 +59,7 @@ export const CreateCheckpointBody = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish(),
+  "daysOfWeek": zod.array(zod.number()).optional().describe('0=Sunday..6=Saturday. Empty/omitted means every day.'),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -77,6 +79,7 @@ export const CreateCheckpointResponse = zod.object({
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
+  "daysOfWeek": zod.array(zod.number()).describe('0=Sunday..6=Saturday. Empty array means every day.'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -105,6 +108,7 @@ export const GetCheckpointResponse = zod.object({
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
+  "daysOfWeek": zod.array(zod.number()).describe('0=Sunday..6=Saturday. Empty array means every day.'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })
@@ -131,6 +135,7 @@ export const UpdateCheckpointBody = zod.object({
   "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish(),
+  "daysOfWeek": zod.array(zod.number()).optional().describe('0=Sunday..6=Saturday. Empty/omitted means every day.'),
   "energyModes": zod.array(zod.string()).optional()
 })
 
@@ -150,6 +155,7 @@ export const UpdateCheckpointResponse = zod.object({
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "enforcementOverride": zod.enum(['off', 'soft', 'focused', 'strict']).nullish().describe('Per-checkpoint override of the global enforcement level'),
+  "daysOfWeek": zod.array(zod.number()).describe('0=Sunday..6=Saturday. Empty array means every day.'),
   "nfcTagId": zod.number().nullish(),
   "createdAt": zod.string()
 })

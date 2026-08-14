@@ -7,13 +7,30 @@ import {
   getListCheckpointsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Clock, ChevronRight, X, Plus, Trash2, SmartphoneNfc, Check, Circle } from "lucide-react";
+import { Loader2, Clock, ChevronRight, ChevronUp, ChevronDown, X, Plus, Trash2, SmartphoneNfc, Check, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 import { Button } from "@/components/ui/button";
 
 // Minute presets
 const MINUTE_PRESETS = [0, 5, 10, 15, 20, 25, 30, 45, 60];
+
+// Day-of-week picker, 0=Sunday..6=Saturday — mirrors settings-alarm.tsx's DAYS.
+const DAYS = [
+  { day: 0, label: "S" },
+  { day: 1, label: "M" },
+  { day: 2, label: "T" },
+  { day: 3, label: "W" },
+  { day: 4, label: "T" },
+  { day: 5, label: "F" },
+  { day: 6, label: "S" },
+];
+const DAY_ABBREV = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatDaysOfWeek(daysOfWeek: number[] | undefined | null) {
+  if (!daysOfWeek || daysOfWeek.length === 0) return null;
+  return [...daysOfWeek].sort().map((d) => DAY_ABBREV[d]).join(", ");
+}
 
 // Second presets for sub-minute capable
 const SECOND_PRESETS = [
@@ -102,6 +119,26 @@ export function Checkpoints() {
     );
   };
 
+  const handleReorder = (id: number, direction: "up" | "down") => {
+    const idx = sorted.findIndex((c) => c.id === id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swapIdx];
+    if (a.order === b.order) return;
+    updateCheckpoint.mutate(
+      { id: a.id, data: { order: b.order } },
+      { onError: () => toast.error("Failed to reorder") }
+    );
+    updateCheckpoint.mutate(
+      { id: b.id, data: { order: a.order } },
+      {
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: getListCheckpointsQueryKey() }),
+        onError: () => toast.error("Failed to reorder"),
+      }
+    );
+  };
+
   return (
     <div className="flex-1 flex flex-col pb-8">
       <div className="pt-8 pb-4 px-6 flex justify-between items-center">
@@ -117,28 +154,56 @@ export function Checkpoints() {
       </div>
 
       <div className="flex flex-col gap-2 px-4">
-        {sorted.map(cp => (
-          <button
+        {sorted.map((cp, idx) => {
+          const dayLabel = formatDaysOfWeek(cp.daysOfWeek);
+          return (
+          <div
             key={cp.id}
-            className={`w-full flex items-center gap-4 bg-card border rounded-2xl px-4 py-4 shadow-sm active:scale-[0.98] transition-all text-left ${
+            className={`w-full flex items-stretch gap-2 bg-card border rounded-2xl pr-2 shadow-sm transition-all ${
                 cp.isActive ? "border-border/40 hover:border-primary/30" : "opacity-60 border-dashed border-border/60 grayscale"
             }`}
-            onClick={() => setEditing(cp)}
           >
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${cp.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-              <LucideIcon name={cp.icon} size={22} strokeWidth={1.5} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-base truncate">{cp.name}</p>
-                {cp.isRequired && <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Required</span>}
-                {cp.type !== 'standard' && <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">{cp.type.replace('_', ' ')}</span>}
+            <button
+              className="flex-1 flex items-center gap-4 px-4 py-4 text-left active:scale-[0.98] transition-all min-w-0"
+              onClick={() => setEditing(cp)}
+            >
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${cp.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                <LucideIcon name={cp.icon} size={22} strokeWidth={1.5} />
               </div>
-              <p className="text-sm text-muted-foreground">{displayDuration(cp.defaultDurationMinutes)}</p>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-base truncate">{cp.name}</p>
+                  {cp.isRequired && <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Required</span>}
+                  {cp.type !== 'standard' && <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">{cp.type.replace('_', ' ')}</span>}
+                </div>
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5 truncate">
+                  <span>{displayDuration(cp.defaultDurationMinutes)}</span>
+                  {dayLabel && <span className="text-primary font-medium truncate">• {dayLabel}</span>}
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-muted-foreground/50 shrink-0" />
+            </button>
+            <div className="flex flex-col justify-center gap-0.5 shrink-0">
+              <button
+                aria-label="Move up"
+                disabled={idx === 0}
+                onClick={() => handleReorder(cp.id, "up")}
+                className="p-1 rounded-lg text-muted-foreground disabled:opacity-20 hover:bg-muted active:scale-95"
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                aria-label="Move down"
+                disabled={idx === sorted.length - 1}
+                onClick={() => handleReorder(cp.id, "down")}
+                className="p-1 rounded-lg text-muted-foreground disabled:opacity-20 hover:bg-muted active:scale-95"
+              >
+                <ChevronDown size={16} />
+              </button>
             </div>
-            <ChevronRight size={18} className="text-muted-foreground/50 shrink-0" />
-          </button>
-        ))}
+          </div>
+          );
+        })}
       </div>
 
       {(editing || isAdding) && (
@@ -175,8 +240,13 @@ function EditSheet({
   const [isActive, setIsActive] = useState<boolean>(checkpoint?.isActive ?? true);
   const [icon, setIcon] = useState(checkpoint?.icon ?? "MapPin");
   const [type, setType] = useState<string>(checkpoint?.type ?? "standard");
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>(checkpoint?.daysOfWeek ?? []);
 
   const subMinute = isSubMinuteCapable(name);
+
+  const toggleDay = (day: number) => {
+    setDaysOfWeek((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()));
+  };
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -193,6 +263,7 @@ function EditSheet({
       isActive,
       icon,
       type,
+      daysOfWeek,
       energyModes: checkpoint?.energyModes ?? ["full", "reduced", "survival"],
     });
   };
@@ -283,6 +354,30 @@ function EditSheet({
                     </button>
                 ))}
             </div>
+          </div>
+
+          {/* Days of week */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between ml-1">
+              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Days</label>
+              <span className="text-xs font-medium text-muted-foreground">
+                {daysOfWeek.length === 0 ? "Every day" : formatDaysOfWeek(daysOfWeek)}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              {DAYS.map(({ day, label }) => (
+                <button
+                  key={day}
+                  onClick={() => toggleDay(day)}
+                  className={`flex-1 h-9 rounded-full text-xs font-bold transition-colors ${
+                    daysOfWeek.includes(day) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground ml-1">Leave all unselected to run every day.</p>
           </div>
 
           {/* Duration */}

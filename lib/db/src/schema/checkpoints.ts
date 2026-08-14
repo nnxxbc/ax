@@ -24,6 +24,10 @@ export const checkpointsTable = pgTable("checkpoints", {
   // Per-checkpoint enforcement override (Phase 3, Feature 5). null = inherit
   // the global settings.enforcementLevel. One of: off | soft | focused | strict.
   enforcementOverride: text("enforcement_override"),
+  // Stored as JSON string array of 0=Sunday..6=Saturday. Empty array "[]"
+  // (the default) means "every day" — this keeps existing checkpoints
+  // unrestricted with no migration needed for their behavior.
+  daysOfWeek: text("days_of_week").notNull().default("[]"),
   createdAt: text("created_at").notNull().default("now()"),
 });
 

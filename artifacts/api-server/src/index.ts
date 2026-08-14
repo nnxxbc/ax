@@ -39,6 +39,10 @@ async function runMigrations() {
       // checkpoints — per-checkpoint enforcement override
       "ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS enforcement_override TEXT;",
 
+      // checkpoints — per-checkpoint day-of-week scheduling (0=Sun..6=Sat,
+      // JSON array; empty array = every day)
+      "ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS days_of_week TEXT NOT NULL DEFAULT '[]';",
+
       // settings — morning alarm
       "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_days_of_week TEXT NOT NULL DEFAULT '[1,2,3,4,5]';",
       "ALTER TABLE settings ADD COLUMN IF NOT EXISTS alarm_requires_nfc_dismissal BOOLEAN NOT NULL DEFAULT FALSE;",

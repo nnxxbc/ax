@@ -26,9 +26,16 @@ router.get("/checkpoints", async (req, res): Promise<void> => {
       } catch (e) {
           req.log.error({ err: e, checkpointId: c.id }, "Failed to parse energyModes");
       }
+      let days: number[] = [];
+      try {
+        days = JSON.parse(c.daysOfWeek ?? "[]");
+      } catch (e) {
+        req.log.error({ err: e, checkpointId: c.id }, "Failed to parse daysOfWeek");
+      }
       return {
         ...c,
         energyModes: modes,
+        daysOfWeek: days,
         nfcTagId: tagByCheckpoint[c.id] ?? null,
       };
     })
@@ -41,16 +48,17 @@ router.post("/checkpoints", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { energyModes, ...rest } = parsed.data;
+  const { energyModes, daysOfWeek, ...rest } = parsed.data;
   const [row] = await db
     .insert(checkpointsTable)
     .values({
       ...rest,
       energyModes: JSON.stringify(energyModes ?? ["full", "reduced", "survival"]),
+      daysOfWeek: JSON.stringify(daysOfWeek ?? []),
       createdAt: new Date().toISOString(),
     })
     .returning();
-  res.status(201).json({ ...row, energyModes: JSON.parse(row.energyModes), nfcTagId: null });
+  res.status(201).json({ ...row, energyModes: JSON.parse(row.energyModes), daysOfWeek: JSON.parse(row.daysOfWeek), nfcTagId: null });
 });
 
 router.get("/checkpoints/:id", async (req, res): Promise<void> => {
@@ -66,7 +74,7 @@ router.get("/checkpoints/:id", async (req, res): Promise<void> => {
     return;
   }
   const [tag] = await db.select().from(nfcTagsTable).where(eq(nfcTagsTable.checkpointId, parsed.data.id));
-  res.json({ ...row, energyModes: JSON.parse(row.energyModes), nfcTagId: tag?.id ?? null });
+  res.json({ ...row, energyModes: JSON.parse(row.energyModes), daysOfWeek: JSON.parse(row.daysOfWeek ?? "[]"), nfcTagId: tag?.id ?? null });
 });
 
 router.patch("/checkpoints/:id", async (req, res): Promise<void> => {
@@ -81,9 +89,10 @@ router.patch("/checkpoints/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: bodyParsed.error.message });
     return;
   }
-  const { energyModes, ...rest } = bodyParsed.data;
+  const { energyModes, daysOfWeek, ...rest } = bodyParsed.data;
   const updates: Record<string, unknown> = { ...rest };
   if (energyModes) updates.energyModes = JSON.stringify(energyModes);
+  if (daysOfWeek !== undefined) updates.daysOfWeek = JSON.stringify(daysOfWeek ?? []);
   const [row] = await db
     .update(checkpointsTable)
     .set(updates)
@@ -94,7 +103,7 @@ router.patch("/checkpoints/:id", async (req, res): Promise<void> => {
     return;
   }
   const [tag] = await db.select().from(nfcTagsTable).where(eq(nfcTagsTable.checkpointId, row.id));
-  res.json({ ...row, energyModes: JSON.parse(row.energyModes), nfcTagId: tag?.id ?? null });
+  res.json({ ...row, energyModes: JSON.parse(row.energyModes), daysOfWeek: JSON.parse(row.daysOfWeek ?? "[]"), nfcTagId: tag?.id ?? null });
 });
 
 router.delete("/checkpoints/:id", async (req, res): Promise<void> => {

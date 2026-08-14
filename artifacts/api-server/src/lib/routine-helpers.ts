@@ -1,5 +1,6 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db, checkpointsTable, checkpointSessionsTable, dailyRoutinesTable, settingsTable } from "@workspace/db";
+import { isScheduledForDay, dayOfWeekFromDateString } from "./schedule-helpers";
 
 export function getTodayDateString(): string {
   return new Date().toISOString().split("T")[0];
@@ -42,9 +43,13 @@ export async function getOrCreateTodayRoutine() {
     .where(eq(checkpointsTable.isActive, true))
     .orderBy(checkpointsTable.order);
 
+  const todayDayOfWeek = dayOfWeekFromDateString(today);
+
   for (const cp of checkpoints) {
     const modes: string[] = JSON.parse(cp.energyModes);
     if (!modes.includes(energyMode)) continue;
+    const days: number[] = JSON.parse(cp.daysOfWeek ?? "[]");
+    if (!isScheduledForDay(days, todayDayOfWeek)) continue;
     await db.insert(checkpointSessionsTable).values({
       routineId: routine.id,
       checkpointId: cp.id,
@@ -104,11 +109,18 @@ export async function updateRoutineCompletionStatus(routineId: number) {
   const [routine] = await db.select().from(dailyRoutinesTable).where(eq(dailyRoutinesTable.id, routineId));
   if (!routine || routine.status === "completed") return routine;
 
-  // Get all checkpoints that ARE required for this cycle
-  const requiredCheckpoints = await db
+  // Get all checkpoints that ARE required for this cycle. A checkpoint
+  // scheduled for specific days (e.g. trash on Mon/Thu) is only "required"
+  // on those days — otherwise a Wednesday routine could never complete
+  // because a Mon/Thu-only checkpoint has no session to satisfy it.
+  const todayDayOfWeek = dayOfWeekFromDateString(routine.date);
+  const allRequired = await db
     .select()
     .from(checkpointsTable)
     .where(and(eq(checkpointsTable.isActive, true), eq(checkpointsTable.isRequired, true)));
+  const requiredCheckpoints = allRequired.filter((cp) =>
+    isScheduledForDay(JSON.parse(cp.daysOfWeek ?? "[]"), todayDayOfWeek),
+  );
 
   if (requiredCheckpoints.length === 0) return routine;
 
