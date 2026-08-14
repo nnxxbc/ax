@@ -64,6 +64,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Keep the screen on for the whole time a checkpoint is in progress —
+  // Karen reported the phone sleeping mid-task. Dynamically imported so a
+  // web build never pulls in native-only code, same pattern as nfc-service.
+  // Only acquired/released on inProgress transitions, not every render, so
+  // it can't fight with itself or leak a wake lock past the checkpoint.
+  useEffect(() => {
+    if (!nfcService.isNative()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { KeepAwake } = await import("@capacitor-community/keep-awake");
+        if (cancelled) return;
+        if (inProgress) {
+          await KeepAwake.keepAwake();
+        } else {
+          await KeepAwake.allowSleep();
+        }
+      } catch (err) {
+        console.warn("[AppLayout] KeepAwake toggle failed:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inProgress]);
+
+  // Belt-and-suspenders: release the wake lock on unmount so a crash or
+  // force-close mid-checkpoint can never leave the screen stuck on.
+  useEffect(() => {
+    return () => {
+      if (!nfcService.isNative()) return;
+      import("@capacitor-community/keep-awake")
+        .then(({ KeepAwake }) => KeepAwake.allowSleep())
+        .catch(() => {});
+    };
+  }, []);
+
   return (
     <div className="mx-auto w-full max-w-[430px] min-h-[100dvh] bg-background flex flex-col relative shadow-2xl shadow-black/5 sm:border-x sm:border-border/50">
       {/* Scrollable content area */}

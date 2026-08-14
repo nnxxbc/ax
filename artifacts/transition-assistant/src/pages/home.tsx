@@ -29,6 +29,7 @@ import { isAlarmActiveNow, dateKey } from "@/lib/alarm-rules";
 import { getJSON, setJSON } from "@/lib/local-store";
 import { effectiveEnforcementLevel } from "@/lib/enforcement";
 import { useStartFrozenEvent, useAppendFrozenStep, useCompleteFrozenEvent } from "@/lib/frozen-api";
+import { useCreateThought } from "@/lib/thoughts-api";
 import { advanceFrozenStage } from "@/lib/frozen-protocol-rules";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,11 @@ function statusIcon(status: string) {
 // ─── Compact routine overview ─────────────────────────────────────────────────
 
 function RoutineOverview({ sessions }: { sessions: any[] }) {
-  const [open, setOpen] = useState(false);
+  // Open by default — per Karen's flexible-order-but-louder-guidance
+  // request, the full ordered list (including anything skipped/cancelled)
+  // should always be visible without an extra tap, so nothing can silently
+  // vanish from view the way cancelled sessions used to.
+  const [open, setOpen] = useState(true);
 
   const requiredMissing = sessions.filter(s => s.isRequired && !["completed", "skipped"].includes(s.status));
   const requiredDone = sessions.filter(s => s.isRequired && ["completed", "skipped"].includes(s.status));
@@ -861,6 +866,7 @@ export function Home() {
           <InProgressView
             session={inProgressSession}
             onScanResult={handleScanResult}
+            onTapComplete={() => handleLocalCheckpointResolution(inProgressSession.checkpointId)}
             enforcementLevel={inProgressEnforcement}
             frozenStage={frozenStage}
             setFrozenStage={setFrozenStage}
@@ -873,7 +879,12 @@ export function Home() {
         </div>
       ) : nextSession ? (
         <div className="flex-1 flex flex-col">
-          <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={nextEnforcement} />
+          <WaitingView
+            session={nextSession}
+            freezeThresholdSeconds={freezeThreshold}
+            enforcementLevel={nextEnforcement}
+            onTapStart={() => handleLocalCheckpointResolution(nextSession.checkpointId)}
+          />
           {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
         </div>
       ) : (
@@ -955,31 +966,82 @@ function BedModeDialog({
 }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
+  const createThought = useCreateThought();
+  const [step, setStep] = useState<"choose" | "neck_check">("choose");
 
-  const handleAction = (mode: string) => {
-    // Respond immediately rather than waiting on the network round-trip —
-    // matches the rest of the app's local-first philosophy (Render's free
-    // instance can take 50+ seconds to wake from idle, which would
-    // otherwise make this dialog look hung/broken for no real reason).
-    // The mutation still fires and persists in the background; if it
-    // fails, it just means the mode label wasn't recorded server-side —
-    // not something that should trap the user on this dialog.
-    const messages: Record<string, string> = {
-      working_from_bed: "Intentional bed work started.",
-      resting: "Rest logged. No pressure.",
-      frozen: "Transition support active.",
-    };
-    toast.success(messages[mode] ?? "Bed mode set.");
+  // "Just resting" needs a second question before it's done — everything
+  // else finalizes straight away.
+  const applyModeLocally = (mode: string) => {
+    // Optimistic local patch, same pattern as applyLocalResult uses for
+    // NFC scans elsewhere. Without this, mode-dependent UI (isFrozen in
+    // InProgressView, the borrowed Work at Desk timer for
+    // working_from_bed) wouldn't update until the mutation's network
+    // round-trip finished — on a cold Render instance that's 50+ seconds,
+    // long enough that tapping an option looked like it did nothing at
+    // all. That silent gap is what made all three options feel broken.
+    queryClient.setQueryData(getGetTodayRoutineQueryKey(), (old: any) => {
+      if (!old) return old;
+      return {
+        ...old,
+        sessions: (old.sessions ?? []).map((s: any) => (s.id === session.id ? { ...s, mode } : s)),
+      };
+    });
+  };
+
+  const finalize = (mode: string, message: string) => {
+    applyModeLocally(mode);
+    toast.success(message);
     onClose();
-
     sessionAction.mutate(
       { id: session.id, data: { action: "continue", mode } },
       {
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() }),
         onError: (err) => console.error("[BedModeDialog] Failed to record mode (will not retry):", err),
       }
     );
   };
+
+  const handleWorkingFromBed = () => finalize("working_from_bed", "Work-from-bed timer started — same as Work at Desk.");
+  const handleFrozen = () => finalize("frozen", "Transition support active.");
+
+  const handleNeckAnswer = (answer: "fine" | "sore") => {
+    createThought.mutate({
+      content: answer === "fine" ? "Rest check-in: neck felt fine." : "Rest check-in: neck was a bit sore.",
+      category: "wellbeing",
+    });
+    finalize("resting", answer === "sore" ? "Logged — maybe adjust the pillow next time." : "Rest logged. No pressure.");
+  };
+
+  if (step === "neck_check") {
+    return (
+      <DialogPrimitive.Root open={true} onOpenChange={(open) => !open && onClose()}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <DialogPrimitive.Content className="fixed left-[50%] top-[50%] z-50 w-[90%] max-w-sm translate-x-[-50%] translate-y-[-50%] bg-background p-6 shadow-xl rounded-3xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+            <h2 className="text-xl font-bold mb-2">Quick check</h2>
+            <p className="text-sm text-muted-foreground mb-6">Is your neck okay?</p>
+            <div className="flex flex-col gap-3">
+              <Button
+                onClick={() => handleNeckAnswer("fine")}
+                className="rounded-2xl h-14 bg-primary/10 text-primary hover:bg-primary/20 border-none"
+              >
+                Yeah, feels fine
+              </Button>
+              <Button
+                onClick={() => handleNeckAnswer("sore")}
+                variant="outline"
+                className="rounded-2xl h-14"
+              >
+                A little sore
+              </Button>
+              <Button variant="ghost" className="mt-2" onClick={() => setStep("choose")}>
+                Back
+              </Button>
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+    );
+  }
 
   return (
     <DialogPrimitive.Root open={true} onOpenChange={(open) => !open && onClose()}>
@@ -990,20 +1052,20 @@ function BedModeDialog({
           <p className="text-sm text-muted-foreground mb-6">How are we using the bed right now?</p>
           <div className="flex flex-col gap-3">
             <Button
-              onClick={() => handleAction("working_from_bed")}
+              onClick={handleWorkingFromBed}
               className="rounded-2xl h-14 bg-primary/10 text-primary hover:bg-primary/20 border-none"
             >
               Working from bed
             </Button>
             <Button
-              onClick={() => handleAction("resting")}
+              onClick={() => setStep("neck_check")}
               variant="outline"
               className="rounded-2xl h-14"
             >
               Just resting
             </Button>
             <Button
-              onClick={() => handleAction("frozen")}
+              onClick={handleFrozen}
               variant="outline"
               className="rounded-2xl h-14 border-destructive/30 text-destructive hover:bg-destructive/5"
             >
@@ -1156,7 +1218,7 @@ function EnergyCard({ title, desc, icon: Icon, color, onClick, disabled }: any) 
   );
 }
 
-function WaitingView({ session, freezeThresholdSeconds, enforcementLevel }: { session: any; freezeThresholdSeconds: number; enforcementLevel: string }) {
+function WaitingView({ session, freezeThresholdSeconds, enforcementLevel, onTapStart }: { session: any; freezeThresholdSeconds: number; enforcementLevel: string; onTapStart?: () => void }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
   const [elapsed, setElapsed] = useState(0);
@@ -1225,14 +1287,28 @@ function WaitingView({ session, freezeThresholdSeconds, enforcementLevel }: { se
 
         {/* NFC instruction — adapts to native vs web */}
         {isNative ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm mb-5">
             <SmartphoneNfc size={16} className="shrink-0" />
             <span>Hold phone near the station tag.</span>
           </div>
         ) : (
-          <p className="text-base text-muted-foreground">
+          <p className="text-base text-muted-foreground mb-5">
             Go to this station and scan your NFC tag.
           </p>
+        )}
+
+        {/* Manual alternative to scanning — goes through the exact same
+            local processing as a real tag scan (handleLocalCheckpointResolution
+            reuses processLocalScan keyed by checkpoint id instead of a UID),
+            so it starts/completes correctly whether or not there's a tag
+            here at all. */}
+        {onTapStart && (
+          <button
+            onClick={onTapStart}
+            className="text-sm font-semibold text-primary underline underline-offset-4 active:opacity-60"
+          >
+            No tag handy? Tap to start this myself
+          </button>
         )}
       </div>
 
@@ -1404,6 +1480,7 @@ function FrozenProtocolView({
 function InProgressView({
   session,
   onScanResult: _onScanResult,
+  onTapComplete,
   enforcementLevel,
   frozenStage,
   setFrozenStage,
@@ -1414,6 +1491,7 @@ function InProgressView({
 }: {
   session: any;
   onScanResult?: (uid: string) => void;
+  onTapComplete?: () => void;
   enforcementLevel: string;
   frozenStage?: 1 | 2 | 3 | 4;
   setFrozenStage?: (s: 1 | 2 | 3 | 4) => void;
@@ -1442,8 +1520,28 @@ function InProgressView({
     );
   }
 
-  const serverTargetMins = isFrozen ? 0 : (session.targetDurationMinutes || session.checkpointDefaultDurationMinutes || 0);
-  const minMins = isFrozen ? 0 : (session.minDurationMinutes || session.checkpointMinDurationMinutes || 0);
+  // Bed Station's "Working from bed" option is meant to behave exactly
+  // like Work at Desk, just started from bed instead of the desk tag —
+  // borrow that checkpoint's own duration config rather than the Bed
+  // checkpoint's (which is normally 0, since Bed itself has no timer).
+  // Matched by name since that's the specific station Karen pointed to;
+  // if it's ever renamed this just falls back to the bed session's own
+  // (untimed) config instead of erroring.
+  const isWorkingFromBed = session.mode === "working_from_bed";
+  const workDeskCheckpoint = isWorkingFromBed
+    ? (destinationOptions ?? []).find((c: any) => c.name?.trim().toUpperCase() === "WORK AT DESK")
+    : null;
+
+  const serverTargetMins = isFrozen
+    ? 0
+    : workDeskCheckpoint
+      ? (workDeskCheckpoint.defaultDurationMinutes ?? 0)
+      : (session.targetDurationMinutes || session.checkpointDefaultDurationMinutes || 0);
+  const minMins = isFrozen
+    ? 0
+    : workDeskCheckpoint
+      ? (workDeskCheckpoint.minDurationMinutes ?? 0)
+      : (session.minDurationMinutes || session.checkpointMinDurationMinutes || 0);
 
   const [localAddedMins, setLocalAddedMins] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -1531,6 +1629,12 @@ function InProgressView({
           <LucideIcon name={session.checkpointIcon} size={32} className="text-primary" strokeWidth={1.5} />
         </div>
 
+        {isWorkingFromBed && (
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">
+            Working from bed{workDeskCheckpoint ? " · timed like Work at Desk" : ""}
+          </p>
+        )}
+
         <h1 className="font-extrabold tracking-tight leading-none mb-8" style={{ fontSize: "clamp(2.5rem, 12vw, 4.5rem)" }}>
           {parts.map((part, i) => (
             <span key={i} className="block">
@@ -1590,6 +1694,19 @@ function InProgressView({
             </>
           )}
         </div>
+
+        {/* Same manual fallback as WaitingView — goes through the identical
+            local logic a re-scan would (including the early-complete
+            warning if minDuration hasn't passed yet), just without needing
+            the tag itself. */}
+        {onTapComplete && (
+          <button
+            onClick={onTapComplete}
+            className="mt-4 text-sm font-semibold text-primary underline underline-offset-4 active:opacity-60"
+          >
+            No tag handy? Tap to complete myself
+          </button>
+        )}
       </div>
     </div>
   );
