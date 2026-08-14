@@ -21,6 +21,9 @@ async function runMigrations() {
       "ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS min_duration_minutes REAL NOT NULL DEFAULT 0;",
       "ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS complete_on_first_scan BOOLEAN NOT NULL DEFAULT FALSE;",
 
+      // daily_routines updates
+      "ALTER TABLE daily_routines ADD COLUMN IF NOT EXISTS completed_at TEXT;",
+
       // settings updates
       "ALTER TABLE settings ADD COLUMN IF NOT EXISTS enforcement_level TEXT NOT NULL DEFAULT 'off';",
     ];
