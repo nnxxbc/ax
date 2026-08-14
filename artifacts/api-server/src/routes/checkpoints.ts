@@ -19,11 +19,19 @@ router.get("/checkpoints", async (req, res): Promise<void> => {
     if (t.checkpointId) tagByCheckpoint[t.checkpointId] = t.id;
   }
   res.json(
-    rows.map((c) => ({
-      ...c,
-      energyModes: JSON.parse(c.energyModes),
-      nfcTagId: tagByCheckpoint[c.id] ?? null,
-    }))
+    rows.map((c) => {
+      let modes = ["full", "reduced", "survival"];
+      try {
+          modes = JSON.parse(c.energyModes);
+      } catch (e) {
+          req.log.error({ err: e, checkpointId: c.id }, "Failed to parse energyModes");
+      }
+      return {
+        ...c,
+        energyModes: modes,
+        nfcTagId: tagByCheckpoint[c.id] ?? null,
+      };
+    })
   );
 });
 

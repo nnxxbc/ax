@@ -29,6 +29,9 @@ export const ListCheckpointsResponseItem = zod.object({
   "defaultDurationMinutes": zod.number(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
+  "isRequired": zod.boolean(),
+  "isRepeatable": zod.boolean(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
@@ -49,6 +52,9 @@ export const CreateCheckpointBody = zod.object({
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean().optional(),
+  "isRequired": zod.boolean().optional(),
+  "isRepeatable": zod.boolean().optional(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
   "energyModes": zod.array(zod.string()).optional()
 })
@@ -63,6 +69,9 @@ export const CreateCheckpointResponse = zod.object({
   "defaultDurationMinutes": zod.number(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
+  "isRequired": zod.boolean(),
+  "isRepeatable": zod.boolean(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
@@ -87,6 +96,9 @@ export const GetCheckpointResponse = zod.object({
   "defaultDurationMinutes": zod.number(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
+  "isRequired": zod.boolean(),
+  "isRepeatable": zod.boolean(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
@@ -110,6 +122,9 @@ export const UpdateCheckpointBody = zod.object({
   "defaultDurationMinutes": zod.number().optional(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean().optional(),
+  "isRequired": zod.boolean().optional(),
+  "isRepeatable": zod.boolean().optional(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']).optional(),
   "completeOnFirstScan": zod.boolean().optional(),
   "energyModes": zod.array(zod.string()).optional()
 })
@@ -124,6 +139,9 @@ export const UpdateCheckpointResponse = zod.object({
   "defaultDurationMinutes": zod.number(),
   "minDurationMinutes": zod.number().optional(),
   "isActive": zod.boolean(),
+  "isRequired": zod.boolean(),
+  "isRepeatable": zod.boolean(),
+  "type": zod.enum(['standard', 'bed', 'leaving_home']),
   "energyModes": zod.array(zod.string()),
   "completeOnFirstScan": zod.boolean().optional().describe('When true, the first NFC scan both starts and completes this checkpoint'),
   "nfcTagId": zod.number().nullish(),
@@ -214,10 +232,11 @@ export const HandleNfcScanBody = zod.object({
 })
 
 export const HandleNfcScanResponse = zod.object({
-  "action": zod.enum(['started', 'completed', 'early_complete_warning', 'no_checkpoint_assigned', 'unknown_tag']),
+  "action": zod.enum(['started', 'completed', 'early_complete_warning', 'no_checkpoint_assigned', 'unknown_tag', 'debounced']),
   "sessionId": zod.number().nullable(),
   "checkpointId": zod.number().nullable(),
   "checkpointName": zod.string().nullable(),
+  "tagUid": zod.string().nullish(),
   "message": zod.string().optional(),
   "elapsedMinutes": zod.number().nullish(),
   "targetMinutes": zod.number().nullish(),
@@ -237,7 +256,9 @@ export const HandleNfcScanResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 }).optional()
 })
 
@@ -250,10 +271,11 @@ export const SimulateNfcScanBody = zod.object({
 })
 
 export const SimulateNfcScanResponse = zod.object({
-  "action": zod.enum(['started', 'completed', 'early_complete_warning', 'no_checkpoint_assigned', 'unknown_tag']),
+  "action": zod.enum(['started', 'completed', 'early_complete_warning', 'no_checkpoint_assigned', 'unknown_tag', 'debounced']),
   "sessionId": zod.number().nullable(),
   "checkpointId": zod.number().nullable(),
   "checkpointName": zod.string().nullable(),
+  "tagUid": zod.string().nullish(),
   "message": zod.string().optional(),
   "elapsedMinutes": zod.number().nullish(),
   "targetMinutes": zod.number().nullish(),
@@ -273,7 +295,9 @@ export const SimulateNfcScanResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 }).optional()
 })
 
@@ -302,7 +326,9 @@ export const GetTodayRoutineResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 })),
   "createdAt": zod.string()
 })
@@ -337,7 +363,9 @@ export const StartTodayRoutineResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 })),
   "createdAt": zod.string()
 })
@@ -372,7 +400,9 @@ export const GetTodaySummaryResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 }).optional()
 })
 
@@ -387,6 +417,7 @@ export const SessionActionParams = zod.object({
 export const SessionActionBody = zod.object({
   "action": zod.enum(['start', 'complete', 'skip', 'miss', 'cancel', 'complete_anyway', 'continue', 'extend_time']),
   "reason": zod.string().optional(),
+  "mode": zod.string().optional(),
   "additionalMinutes": zod.number().optional().describe('Minutes to add to the current session target (used with extend_time action)')
 })
 
@@ -406,7 +437,9 @@ export const SessionActionResponse = zod.object({
   "minDurationMinutes": zod.number().nullish(),
   "elapsedSeconds": zod.number().nullish(),
   "skipReason": zod.string().nullish(),
-  "overrideReason": zod.string().nullish()
+  "overrideReason": zod.string().nullish(),
+  "mode": zod.string().nullish(),
+  "checkpointType": zod.enum(['standard', 'bed', 'leaving_home']).optional()
 })
 
 
@@ -494,6 +527,7 @@ export const GetSettingsResponse = zod.object({
   "vibrationEnabled": zod.boolean().optional(),
   "soundEnabled": zod.boolean().optional(),
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
+  "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
   "developerModeEnabled": zod.boolean().optional()
 })
@@ -513,6 +547,7 @@ export const UpdateSettingsBody = zod.object({
   "vibrationEnabled": zod.boolean().optional(),
   "soundEnabled": zod.boolean().optional(),
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
+  "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
   "developerModeEnabled": zod.boolean().optional()
 })
@@ -529,6 +564,7 @@ export const UpdateSettingsResponse = zod.object({
   "vibrationEnabled": zod.boolean().optional(),
   "soundEnabled": zod.boolean().optional(),
   "defaultEnergyMode": zod.enum(['full', 'reduced', 'survival']).optional(),
+  "enforcementLevel": zod.enum(['off', 'soft', 'focused', 'strict']).optional(),
   "simulationModeEnabled": zod.boolean().optional(),
   "developerModeEnabled": zod.boolean().optional()
 })

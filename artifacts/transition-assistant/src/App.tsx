@@ -1,5 +1,5 @@
 import { AppLayout } from "@/components/layout/app-layout";
-import { Route, Switch, Router as WouterRouter } from "wouter";
+import { Route, Switch, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { Home } from "@/pages/home";
@@ -24,6 +24,9 @@ function NotFound() {
 }
 
 function Router() {
+  const [location] = useLocation();
+  console.log(`[Router] Current location: "${location}"`);
+
   return (
     <AppLayout>
       <Switch>
@@ -42,9 +45,12 @@ function Router() {
 }
 
 function App() {
+  const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+  console.log(`[App] Initializing. Base: "${base}", URL: ${window.location.href}`);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+      <WouterRouter base={base}>
         <Router />
       </WouterRouter>
       <Toaster position="top-center" />

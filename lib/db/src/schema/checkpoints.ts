@@ -1,6 +1,6 @@
 import { pgTable, serial, text, real, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const checkpointsTable = pgTable("checkpoints", {
   id: serial("id").primaryKey(),
@@ -17,9 +17,13 @@ export const checkpointsTable = pgTable("checkpoints", {
   completeOnFirstScan: boolean("complete_on_first_scan").notNull().default(false),
   // Stored as JSON string array: ["full","reduced","survival"]
   energyModes: text("energy_modes").notNull().default('["full","reduced","survival"]'),
+  isRequired: boolean("is_required").notNull().default(true),
+  isRepeatable: boolean("is_repeatable").notNull().default(true),
+  // type: standard | bed | leaving_home
+  type: text("type").notNull().default("standard"),
   createdAt: text("created_at").notNull().default("now()"),
 });
 
 export const insertCheckpointSchema = createInsertSchema(checkpointsTable).omit({ id: true });
-export type InsertCheckpoint = z.infer<typeof insertCheckpointSchema>;
+export type InsertCheckpoint = typeof checkpointsTable.$inferInsert;
 export type Checkpoint = typeof checkpointsTable.$inferSelect;

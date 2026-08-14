@@ -26,6 +26,7 @@ interface NfcEvent {
 interface StartScanningOptions {
   invalidateAfterFirstRead?: boolean;
   alertMessage?: string;
+  androidReaderModeFlags?: number;
 }
 interface NfcPlugin {
   isSupported(): Promise<{ supported: boolean }>;
@@ -49,8 +50,8 @@ export type NfcAvailability =
 // ─── Singleton plugin reference ───────────────────────────────────────────────
 let _plugin: NfcPlugin | null | undefined = undefined; // undefined = not yet resolved
 
-async function resolvePlugin(): Promise<NfcPlugin | null> {
-  if (_plugin !== undefined) return _plugin;
+async function resolvePlugin(): Promise<{ instance: NfcPlugin | null }> {
+  if (_plugin !== undefined) return { instance: _plugin };
 
   const isNative =
     typeof window !== "undefined" &&
@@ -59,7 +60,7 @@ async function resolvePlugin(): Promise<NfcPlugin | null> {
 
   if (!isNative) {
     _plugin = null;
-    return null;
+    return { instance: null };
   }
 
   try {
@@ -70,7 +71,7 @@ async function resolvePlugin(): Promise<NfcPlugin | null> {
     console.warn("[NFCService] Could not load @capgo/capacitor-nfc:", err);
     _plugin = null;
   }
-  return _plugin;
+  return { instance: _plugin };
 }
 
 // ─── NFCService ───────────────────────────────────────────────────────────────
@@ -91,10 +92,16 @@ class NFCService {
 
   /** Query NFC hardware and enabled state */
   async getAvailability(): Promise<NfcAvailability> {
-    if (!this.isNative()) return "web_simulation";
+    const native = this.isNative();
+    console.debug("[NFCService] getAvailability - isNative:", native);
 
-    const plugin = await resolvePlugin();
-    if (!plugin) return "native_unsupported";
+    if (!native) return "web_simulation";
+
+    const { instance: plugin } = await resolvePlugin();
+    if (!plugin) {
+      console.warn("[NFCService] Native platform but plugin not resolved");
+      return "native_unsupported";
+    }
 
     try {
       const { supported } = await plugin.isSupported();
@@ -108,7 +115,7 @@ class NFCService {
 
   /** Open Android NFC system settings */
   async openNfcSettings(): Promise<void> {
-    const plugin = await resolvePlugin();
+    const { instance: plugin } = await resolvePlugin();
     if (plugin) await plugin.showSettings().catch(() => {});
   }
 
@@ -141,9 +148,12 @@ class NFCService {
    * No-op in web/simulation mode — use simulateScan() there.
    */
   async startScanning(onTag: (uid: string) => void): Promise<void> {
-    const plugin = await resolvePlugin();
+    const isNative = this.isNative();
+    console.debug("[NFCService] startScanning - isNative:", isNative);
+
+    const { instance: plugin } = await resolvePlugin();
     if (!plugin) {
-      console.debug("[NFCService] startScanning: web mode — no native plugin");
+      console.debug("[NFCService] startScanning: web mode or plugin not resolved");
       return;
     }
 
@@ -151,13 +161,14 @@ class NFCService {
     await this._stopSession();
 
     this._listener = await plugin.addListener("nfcEvent", (event) => {
+      console.debug("[NFCService] Received plugin event:", event);
       const tag = event.tag;
-      if (!tag?.id || tag.id.length === 0) {
+      if (!tag?.id || (Array.isArray(tag.id) && tag.id.length === 0)) {
         console.debug("[NFCService] Tag event but no UID — ignoring");
         return;
       }
 
-      const uid = this.normalizeUid(tag.id);
+      const uid = Array.isArray(tag.id) ? this.normalizeUid(tag.id) : tag.id;
       const tech = tag.techTypes?.join(", ") ?? event.type;
 
       console.debug(
@@ -170,12 +181,17 @@ class NFCService {
     });
 
     try {
+      // Android flags: NFC_A | NFC_B | NFC_F | NFC_V | NO_PLATFORM_SOUNDS | SKIP_NDEF_CHECK
+      // 1 | 2 | 4 | 8 | 256 | 128 = 399
+      // This set of flags is the most aggressive for capturing raw UIDs and
+      // preventing the Android system from trying its own dispatch.
       await plugin.startScanning({
-        invalidateAfterFirstRead: false, // keep session open for start + complete scans
+        invalidateAfterFirstRead: false,
         alertMessage: "Hold near station tag",
+        androidReaderModeFlags: 399,
       });
       this._scanning = true;
-      console.debug("[NFCService] Scanning started");
+      console.debug("[NFCService] Scanning started with flags: 399");
     } catch (err) {
       console.error("[NFCService] startScanning failed:", err);
     }
@@ -193,7 +209,7 @@ class NFCService {
     }
 
     if (this._scanning) {
-      const plugin = await resolvePlugin();
+      const { instance: plugin } = await resolvePlugin();
       if (plugin) {
         await plugin.stopScanning().catch(() => {});
       }

@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const nfcTagsTable = pgTable("nfc_tags", {
   id: serial("id").primaryKey(),
@@ -11,5 +11,5 @@ export const nfcTagsTable = pgTable("nfc_tags", {
 });
 
 export const insertNfcTagSchema = createInsertSchema(nfcTagsTable).omit({ id: true });
-export type InsertNfcTag = z.infer<typeof insertNfcTagSchema>;
+export type InsertNfcTag = typeof nfcTagsTable.$inferInsert;
 export type NfcTag = typeof nfcTagsTable.$inferSelect;

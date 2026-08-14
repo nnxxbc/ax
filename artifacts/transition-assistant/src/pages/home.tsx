@@ -16,11 +16,14 @@ import {
   Battery, BatteryMedium, BatteryWarning, CheckCircle2,
   MapPin, Smartphone, Plus, ChevronDown, ChevronUp,
   Circle, CheckCircle, XCircle, SkipForward, AlertCircle,
-  SmartphoneNfc,
+  SmartphoneNfc, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 import { nfcService } from "@/services/nfc-service";
+import { notificationService } from "@/services/notification-service";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Button } from "@/components/ui/button";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +48,11 @@ function statusIcon(status: string) {
 
 function RoutineOverview({ sessions }: { sessions: any[] }) {
   const [open, setOpen] = useState(false);
-  const sorted = [...sessions].sort((a, b) => a.order - b.order);
+
+  const requiredMissing = sessions.filter(s => s.isRequired && !["completed", "skipped"].includes(s.status));
+  const requiredDone = sessions.filter(s => s.isRequired && ["completed", "skipped"].includes(s.status));
+  const optional = sessions.filter(s => !s.isRequired);
+
   const doneCount = sessions.filter(s => ["completed", "skipped"].includes(s.status)).length;
 
   return (
@@ -61,39 +68,61 @@ function RoutineOverview({ sessions }: { sessions: any[] }) {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 flex flex-col gap-0.5 animate-in slide-in-from-bottom-2 duration-200">
-          {sorted.map(s => (
-            <div
-              key={s.id}
-              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-xl ${
-                s.status === "in_progress" ? "bg-primary/10" : ""
-              }`}
-            >
-              {statusIcon(s.status)}
-              <span
-                className={`text-sm font-medium flex-1 truncate ${
-                  s.status === "completed" || s.status === "skipped"
-                    ? "line-through text-muted-foreground/50"
-                    : s.status === "in_progress"
-                    ? "text-primary"
-                    : "text-foreground"
-                }`}
-              >
-                {s.checkpointName}
-              </span>
-              {s.targetDurationMinutes != null && s.targetDurationMinutes > 0 && s.status === "waiting" && (
-                <span className="text-[10px] text-muted-foreground/60 shrink-0">
-                  {s.targetDurationMinutes < 1
-                    ? `${Math.round(s.targetDurationMinutes * 60)}s`
-                    : `${s.targetDurationMinutes}m`}
-                </span>
-              )}
+        <div className="px-4 pb-4 flex flex-col gap-4 animate-in slide-in-from-bottom-2 duration-200 max-h-[60vh] overflow-y-auto">
+          {requiredMissing.length > 0 && (
+            <div className="space-y-1">
+                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest ml-2 mb-1">Required Missing</p>
+                {requiredMissing.map(s => <SessionRow key={s.id} s={s} />)}
             </div>
-          ))}
+          )}
+
+          {requiredDone.length > 0 && (
+            <div className="space-y-1">
+                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest ml-2 mb-1">Required Completed</p>
+                {requiredDone.map(s => <SessionRow key={s.id} s={s} />)}
+            </div>
+          )}
+
+          {optional.length > 0 && (
+            <div className="space-y-1">
+                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest ml-2 mb-1">Optional</p>
+                {optional.map(s => <SessionRow key={s.id} s={s} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function SessionRow({ s }: { s: any }) {
+    return (
+        <div
+            className={`flex items-center gap-2.5 px-2 py-1.5 rounded-xl ${
+                s.status === "in_progress" ? "bg-primary/10" : ""
+            }`}
+        >
+            {statusIcon(s.status)}
+            <span
+                className={`text-sm font-medium flex-1 truncate ${
+                    s.status === "completed" || s.status === "skipped"
+                        ? "line-through text-muted-foreground/50"
+                        : s.status === "in_progress"
+                            ? "text-primary"
+                            : "text-foreground"
+                }`}
+            >
+                {s.checkpointName}
+            </span>
+            {s.targetDurationMinutes != null && s.targetDurationMinutes > 0 && s.status === "waiting" && (
+                <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                  {s.targetDurationMinutes < 1
+                      ? `${Math.round(s.targetDurationMinutes * 60)}s`
+                      : `${s.targetDurationMinutes}m`}
+                </span>
+            )}
+        </div>
+    );
 }
 
 // ─── Freeze intervention overlay ──────────────────────────────────────────────
@@ -151,10 +180,6 @@ function FreezeOverlay({ onDismiss }: { onDismiss: () => void }) {
 }
 
 // ─── NFC scan hook ────────────────────────────────────────────────────────────
-// Manages the NFC scan lifecycle for the home page.
-// Starts scanning when there's an active session, stops when there isn't.
-// Validates the UID against the expected checkpoint BEFORE calling the API
-// to prevent accidentally mutating the wrong station.
 
 interface UseHomeNfcOptions {
   /** checkpointId we expect right now (waiting or in_progress) */
@@ -182,22 +207,7 @@ function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: U
   useEffect(() => { onWrongRef.current = onWrongStation; }, [onWrongStation]);
 
   const handleTag = useCallback((uid: string) => {
-    const expected = expectedRef.current;
-    const tags = tagsRef.current ?? [];
-
-    // Resolve the UID to a checkpointId using the local tag cache
-    const match = tags.find(t => t.tagUid === uid);
-
-    if (match && match.checkpointId && expected && match.checkpointId !== expected) {
-      // Known tag but wrong station — block the API call
-      console.debug(
-        `[HomeNFC] Wrong station — expected checkpointId ${expected}, scanned UID ${uid} → checkpoint ${match.checkpointId}`
-      );
-      onWrongRef.current();
-      return;
-    }
-
-    // Unknown UID or correct station — let the API sort it out
+    // Unknown UID or any station — let the API sort it out
     onScanRef.current(uid);
   }, []);
 
@@ -228,6 +238,7 @@ export function Home() {
   const { data: nfcTags } = useListNfcTags({ query: { queryKey: getListNfcTagsQueryKey() } });
 
   const [completedName, setCompletedName] = useState<string | null>(null);
+  const [lastApiError, setLastApiError] = useState<string | null>(null);
   const prevInProgressRef = useRef<any>(null);
 
   const inProgressSession = routine?.sessions?.find((s: any) => s.status === "in_progress");
@@ -236,6 +247,10 @@ export function Home() {
   // The checkpoint we're actively waiting on (either in-progress or next waiting)
   const activeCheckpointId: number | null =
     inProgressSession?.checkpointId ?? nextSession?.checkpointId ?? null;
+
+  useEffect(() => {
+    notificationService.requestPermissions();
+  }, []);
 
   useEffect(() => {
     const prev = prevInProgressRef.current;
@@ -250,35 +265,61 @@ export function Home() {
 
   // ── NFC scan handler ───────────────────────────────────────────────────────
   const [earlyWarningDialog, setEarlyWarningDialog] = useState<any>(null);
+  const [bedModeDialog, setBedModeDialog] = useState<any>(null);
 
   const handleScanResult = useCallback(
     (uid: string) => {
-      console.debug(`[Home] Calling POST /api/nfc/scan with UID: ${uid}`);
+      console.debug(`[Home] Initiating NFC scan API call for UID: ${uid}`);
+      setLastApiError(null);
       handleNfcScan.mutate(
         { data: { tagUid: uid } },
         {
           onSuccess: (result: any) => {
             console.debug(
-              `[Home] Scan result — action: ${result.action} | checkpoint: ${result.checkpointName} | state: ${result.session?.status ?? "n/a"}`
+              `[Home] Scan API Success — action: ${result.action} | checkpoint: ${result.checkpointName}`
             );
 
             switch (result.action) {
               case "started":
-                toast(`${result.checkpointName} started. Park your phone.`);
+                if (result.session?.checkpointType === "bed") {
+                  setBedModeDialog(result);
+                } else if (result.session?.checkpointType === "leaving_home") {
+                  toast.success("Leaving home recorded. Stay safe!");
+                } else {
+                  toast(`${result.checkpointName} started. Park your phone.`);
+                }
+
+                if (result.session?.targetDurationMinutes) {
+                  notificationService.scheduleTimerEnd(result.checkpointName, result.session.targetDurationMinutes * 60);
+                }
                 break;
               case "completed":
-                // Routine polling will update state; completion flash shows automatically
+                notificationService.cancelAll();
+                if (result.session?.checkpointType === "leaving_home") {
+                    toast.success("Safe travels! Door locked?");
+                } else {
+                    toast.success(`${result.checkpointName} completed!`);
+                }
                 break;
               case "early_complete_warning":
                 setEarlyWarningDialog(result);
                 return; // don't invalidate yet
               case "unknown_tag":
-                toast("No station assigned to this tag.", { duration: 2000 });
-                console.debug("[Home] Unknown tag — reason: no mapping");
-                return;
+                toast(`Unknown tag: ${result.tagUid}`, {
+                  duration: 5000,
+                  action: {
+                    label: "Register",
+                    onClick: () => {
+                      // Redirect to nfc-tags with the UID
+                      window.location.href = `/nfc-tags?uid=${result.tagUid}`;
+                    }
+                  }
+                });
+                console.debug("[Home] Unknown tag — reason: no mapping", result.tagUid);
+                break;
               case "no_checkpoint_assigned":
                 toast("Tag has no station assigned.", { duration: 2000 });
-                return;
+                break;
               case "debounced":
                 console.debug("[Home] Scan debounced by server");
                 return;
@@ -289,9 +330,24 @@ export function Home() {
             queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
             queryClient.invalidateQueries({ queryKey: getGetTodaySummaryQueryKey() });
           },
-          onError: () => {
-            console.debug("[Home] Scan API error — reason: network/server");
-            toast.error("Connection error — scan not recorded. Try again.", { duration: 4000 });
+          onError: (err: any) => {
+            console.error("[Home] CRITICAL Scan API error:", err);
+            let detail = "Unknown error";
+
+            if (err.name === "ApiError") {
+                const data = err.data;
+                const message = data?.message || data?.error || err.message;
+                detail = `HTTP ${err.status}: ${message}`;
+                if (data?.details) {
+                    detail += `\n\nDetails: ${data.details}`;
+                }
+            } else {
+                detail = err.message || "Network failure";
+            }
+
+            setLastApiError(detail);
+            console.debug(`[Home] API Error Detail: ${detail}`);
+            toast.error("Scan failed. See error on screen.", { duration: 4000 });
           },
         }
       );
@@ -369,7 +425,23 @@ export function Home() {
 
   // No routine → energy picker
   if (!routine || routine.status === "abandoned") {
-    return <EnergyPicker onStart={handleStart} isPending={startRoutine.isPending} />;
+    return (
+      <div className="flex-1 flex flex-col relative">
+        {lastApiError && (
+          <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
+            <p className="text-xs font-bold uppercase tracking-wider mb-1">API Error</p>
+            <p className="text-sm font-mono break-all">{lastApiError}</p>
+            <button
+              className="mt-2 text-[10px] underline"
+              onClick={() => setLastApiError(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <EnergyPicker onStart={handleStart} isPending={startRoutine.isPending} />
+      </div>
+    );
   }
 
   // Routine completed
@@ -390,47 +462,77 @@ export function Home() {
 
   const freezeThreshold = settings?.freezeStuckThresholdSeconds ?? 30;
 
-  if (inProgressSession) {
-    return (
-      <>
-        <div className="flex-1 flex flex-col">
-          <InProgressView session={inProgressSession} onScanResult={handleScanResult} />
-          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+  return (
+    <div className="flex-1 flex flex-col relative">
+      {lastApiError && (
+        <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
+          <p className="text-xs font-bold uppercase tracking-wider mb-1">API Error</p>
+          <p className="text-sm font-mono break-all">{lastApiError}</p>
+          <button
+            className="mt-2 text-[10px] underline"
+            onClick={() => setLastApiError(null)}
+          >
+            Dismiss
+          </button>
         </div>
+      )}
 
-        {/* Early complete warning dialog */}
-        {earlyWarningDialog && (
-          <EarlyCompleteDialog
-            dialog={earlyWarningDialog}
-            onKeepGoing={() => setEarlyWarningDialog(null)}
-            onCompleteAnyway={handleCompleteAnyway}
-            isPending={sessionAction.isPending}
-          />
-        )}
-      </>
-    );
-  }
+      {inProgressSession ? (
+        <>
+          <div className="flex-1 flex flex-col">
+            <InProgressView session={inProgressSession} onScanResult={handleScanResult} enforcementLevel={settings?.enforcementLevel ?? 'off'} />
+            {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+          </div>
 
-  if (nextSession) {
-    return (
-      <>
-        <div className="flex-1 flex flex-col">
-          <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} />
-          {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
-        </div>
+          {/* Early complete warning dialog */}
+          {earlyWarningDialog && (
+            <EarlyCompleteDialog
+              dialog={earlyWarningDialog}
+              onKeepGoing={() => setEarlyWarningDialog(null)}
+              onCompleteAnyway={handleCompleteAnyway}
+              isPending={sessionAction.isPending}
+            />
+          )}
 
-        {earlyWarningDialog && (
-          <EarlyCompleteDialog
-            dialog={earlyWarningDialog}
-            onKeepGoing={() => setEarlyWarningDialog(null)}
-            onCompleteAnyway={handleCompleteAnyway}
-            isPending={sessionAction.isPending}
-          />
-        )}
-      </>
-    );
-  }
+          {/* Bed mode dialog */}
+          {bedModeDialog && (
+            <BedModeDialog
+              session={bedModeDialog.session}
+              onClose={() => setBedModeDialog(null)}
+            />
+          )}
+        </>
+      ) : nextSession ? (
+        <>
+          <div className="flex-1 flex flex-col">
+            <WaitingView session={nextSession} freezeThresholdSeconds={freezeThreshold} enforcementLevel={settings?.enforcementLevel ?? 'off'} />
+            {routine.sessions?.length > 0 && <RoutineOverview sessions={routine.sessions} />}
+          </div>
 
+          {earlyWarningDialog && (
+            <EarlyCompleteDialog
+              dialog={earlyWarningDialog}
+              onKeepGoing={() => setEarlyWarningDialog(null)}
+              onCompleteAnyway={handleCompleteAnyway}
+              isPending={sessionAction.isPending}
+            />
+          )}
+
+          {bedModeDialog && (
+            <BedModeDialog
+              session={bedModeDialog.session}
+              onClose={() => setBedModeDialog(null)}
+            />
+          )}
+        </>
+      ) : (
+        <ActiveRoutineEmpty routine={routine} onStart={handleStart} isPending={startRoutine.isPending} />
+      )}
+    </div>
+  );
+}
+
+function ActiveRoutineEmpty({ routine, onStart, isPending }: { routine: any, onStart: any, isPending: boolean }) {
   // Active routine but empty/all done
   const allDone = (routine.sessions?.length ?? 0) > 0 &&
     routine.sessions?.every((s: any) => ["completed", "skipped", "missed", "cancelled"].includes(s.status));
@@ -444,24 +546,19 @@ export function Home() {
       <p className="text-muted-foreground">{allDone ? "You can rest now." : "Choose how much energy you have today."}</p>
       {!allDone && (
         <div className="flex flex-col gap-3 w-full mt-10">
-          <EnergyCard title="Full Energy" desc="All stations active." icon={Battery} color="bg-primary/10 text-primary" onClick={() => handleStart("full")} disabled={startRoutine.isPending} />
-          <EnergyCard title="Reduced" desc="Only the important things." icon={BatteryMedium} color="bg-secondary/10 text-secondary-foreground" onClick={() => handleStart("reduced")} disabled={startRoutine.isPending} />
-          <EnergyCard title="Survival" desc="Absolute essentials only." icon={BatteryWarning} color="bg-destructive/10 text-destructive" onClick={() => handleStart("survival")} disabled={startRoutine.isPending} />
+          <EnergyCard title="Full Energy" desc="All stations active." icon={Battery} color="bg-primary/10 text-primary" onClick={() => onStart("full")} disabled={isPending} />
+          <EnergyCard title="Reduced" desc="Only the important things." icon={BatteryMedium} color="bg-secondary/10 text-secondary-foreground" onClick={() => onStart("reduced")} disabled={isPending} />
+          <EnergyCard title="Survival" desc="Absolute essentials only." icon={BatteryWarning} color="bg-destructive/10 text-destructive" onClick={() => onStart("survival")} disabled={isPending} />
         </div>
       )}
       {allDone && (
-        <button className="mt-8 text-sm text-muted-foreground underline underline-offset-4" onClick={() => handleStart("full")}>
+        <button className="mt-8 text-sm text-muted-foreground underline underline-offset-4" onClick={() => onStart("full")}>
           Restart routine
         </button>
       )}
     </div>
   );
 }
-
-// ─── Early-complete warning dialog ────────────────────────────────────────────
-
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Button } from "@/components/ui/button";
 
 function EarlyCompleteDialog({
   dialog,
@@ -498,7 +595,63 @@ function EarlyCompleteDialog({
   );
 }
 
-// ─── Energy picker ────────────────────────────────────────────────────────────
+function BedModeDialog({
+  session,
+  onClose,
+}: {
+  session: any;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const sessionAction = useSessionAction();
+
+  const handleAction = (mode: string) => {
+    sessionAction.mutate(
+      { id: session.id, data: { action: "continue", mode } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+          toast.success(mode === "working_from_bed" ? "Intentional bed work started." : "Transition support active.");
+          onClose();
+        },
+      }
+    );
+  };
+
+  return (
+    <DialogPrimitive.Root open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-[50%] top-[50%] z-50 w-[90%] max-w-sm translate-x-[-50%] translate-y-[-50%] bg-background p-6 shadow-xl rounded-3xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+          <h2 className="text-xl font-bold mb-2">Bed Station</h2>
+          <p className="text-sm text-muted-foreground mb-6">How are we using the bed right now?</p>
+          <div className="flex flex-col gap-3">
+            <Button
+              onClick={() => handleAction("working_from_bed")}
+              className="rounded-2xl h-14 bg-primary/10 text-primary hover:bg-primary/20 border-none"
+            >
+              Working from bed
+            </Button>
+            <Button
+              onClick={() => handleAction("frozen")}
+              variant="outline"
+              className="rounded-2xl h-14"
+            >
+              I am frozen / stuck
+            </Button>
+            <Button
+              variant="ghost"
+              className="mt-2"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
 
 function EnergyPicker({ onStart, isPending }: { onStart: (m: "full" | "reduced" | "survival") => void; isPending: boolean }) {
   return (
@@ -534,18 +687,14 @@ function EnergyCard({ title, desc, icon: Icon, color, onClick, disabled }: any) 
   );
 }
 
-// ─── Waiting view ─────────────────────────────────────────────────────────────
-
-function WaitingView({ session, freezeThresholdSeconds }: { session: any; freezeThresholdSeconds: number }) {
+function WaitingView({ session, freezeThresholdSeconds, enforcementLevel }: { session: any; freezeThresholdSeconds: number; enforcementLevel: string }) {
   const queryClient = useQueryClient();
   const sessionAction = useSessionAction();
   const [elapsed, setElapsed] = useState(0);
   const [freezeDismissed, setFreezeDismissed] = useState(false);
 
-  // Reset freeze dismissed state when session changes
   useEffect(() => { setFreezeDismissed(false); setElapsed(0); }, [session.id]);
 
-  // Count seconds on this waiting screen
   useEffect(() => {
     const id = setInterval(() => setElapsed(e => e + 1), 1000);
     return () => clearInterval(id);
@@ -566,6 +715,8 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
   const name: string = session.checkpointName ?? "Station";
   const parts = name.split(/\s*\+\s*/);
   const isNative = nfcService.isNative();
+
+  const showSkip = enforcementLevel !== "strict";
 
   return (
     <div className="flex-1 flex flex-col animate-in slide-in-from-bottom-4 duration-500 relative">
@@ -616,27 +767,32 @@ function WaitingView({ session, freezeThresholdSeconds }: { session: any; freeze
         )}
       </div>
 
-      <div className="flex items-center justify-center pb-6 pt-3">
-        <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleSkip} disabled={sessionAction.isPending}>
-          Skip this one
-        </button>
-      </div>
+      {showSkip && (
+        <div className="flex items-center justify-center pb-6 pt-3">
+          <button className="text-sm text-muted-foreground underline underline-offset-4 active:opacity-60" onClick={handleSkip} disabled={sessionAction.isPending}>
+            Skip this one
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── In-progress view ─────────────────────────────────────────────────────────
-
-function InProgressView({ session, onScanResult: _onScanResult }: { session: any; onScanResult?: (uid: string) => void }) {
+function InProgressView({ session, onScanResult: _onScanResult, enforcementLevel }: { session: any; onScanResult?: (uid: string) => void; enforcementLevel: string }) {
   const sessionAction = useSessionAction();
-  // targetDurationMinutes may be decimal (e.g. 0.5 = 30s)
-  const targetMins: number = session.targetDurationMinutes ?? session.defaultDurationMinutes ?? 0;
-  const minMins: number = session.minDurationMinutes ?? 0;
+  const queryClient = useQueryClient();
 
-  const [addedMins, setAddedMins] = useState(0);
+  const isFrozen = session.mode === "frozen";
+  const isFocused = enforcementLevel === "focused";
+
+  const serverTargetMins = isFrozen ? 0 : (session.targetDurationMinutes || session.checkpointDefaultDurationMinutes || 0);
+  const minMins = isFrozen ? 0 : (session.minDurationMinutes || session.checkpointMinDurationMinutes || 0);
+
+  const [localAddedMins, setLocalAddedMins] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
-  // Restore elapsed from startedAt timestamp (handles app resume correctly)
+  const lastServerTargetRef = useRef(serverTargetMins);
+
   useEffect(() => {
     const start = session.startedAt ? new Date(session.startedAt).getTime() : Date.now();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
@@ -645,10 +801,18 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
     return () => clearInterval(id);
   }, [session.startedAt]);
 
-  useEffect(() => { setAddedMins(0); }, [session.id]);
+  useEffect(() => {
+    if (serverTargetMins > lastServerTargetRef.current) {
+      const diff = serverTargetMins - lastServerTargetRef.current;
+      setLocalAddedMins(prev => Math.max(0, prev - diff));
+    }
+    lastServerTargetRef.current = serverTargetMins;
+  }, [serverTargetMins]);
 
-  const totalTargetSecs = (targetMins + addedMins) * 60;
-  const isZeroDuration = targetMins === 0 && addedMins === 0;
+  useEffect(() => { setLocalAddedMins(0); lastServerTargetRef.current = serverTargetMins; }, [session.id]);
+
+  const totalTargetSecs = (serverTargetMins + localAddedMins) * 60;
+  const isZeroDuration = serverTargetMins === 0 && localAddedMins === 0;
   const displaySecs = isZeroDuration ? elapsed : Math.max(0, totalTargetSecs - elapsed);
   const countingDown = !isZeroDuration;
   const minElapsed = elapsed >= minMins * 60;
@@ -656,19 +820,45 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
   const showReturnScan = minElapsed || targetReached;
 
   const handleExtend = (mins: number) => {
-    setAddedMins(prev => prev + mins);
+    setLocalAddedMins(prev => prev + mins);
     sessionAction.mutate(
       { id: session.id, data: { action: "extend_time", additionalMinutes: mins } },
-      { onError: () => setAddedMins(prev => prev - mins) }
+      {
+        onSuccess: (updatedSession) => {
+            const totalRemainingSecs = (updatedSession.targetDurationMinutes || 0) * 60 - elapsed;
+            notificationService.scheduleTimerEnd(session.checkpointName, totalRemainingSecs);
+        },
+        onError: () => {
+          setLocalAddedMins(prev => Math.max(0, prev - mins));
+          toast.error("Failed to add time");
+        }
+      }
     );
+  };
+
+  const handleDismiss = () => {
+    sessionAction.mutate({ id: session.id, data: { action: "cancel" } }, {
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getGetTodayRoutineQueryKey() });
+            toast("Transition dismissed.");
+        }
+    });
   };
 
   const name: string = session.checkpointName ?? "Station";
   const parts = name.split(/\s*\+\s*/);
 
   return (
-    <div className="flex-1 flex flex-col animate-in fade-in duration-500 bg-primary/[0.03]">
-      {/* status pill */}
+    <div className="flex-1 flex flex-col animate-in fade-in duration-500 bg-primary/[0.03] relative">
+      {isFocused && (
+        <button
+            onClick={handleDismiss}
+            className="absolute top-8 right-6 p-2 rounded-full bg-muted/50 text-muted-foreground hover:bg-muted active:scale-95 transition-all z-10"
+        >
+            <X size={20} />
+        </button>
+      )}
+
       <div className="flex justify-center pt-8 pb-2">
         <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-primary bg-primary/10 px-4 py-1.5 rounded-full">
           In Progress
@@ -676,14 +866,12 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-        {/* icon */}
         <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
           <LucideIcon name={session.checkpointIcon} size={32} className="text-primary" strokeWidth={1.5} />
         </div>
 
-        {/* task name — DOMINANT */}
         <h1 className="font-extrabold tracking-tight leading-none mb-8" style={{ fontSize: "clamp(2.5rem, 12vw, 4.5rem)" }}>
-          {parts.map((part, i) => (
+          {isFrozen ? "TRANSITION SUPPORT" : parts.map((part, i) => (
             <span key={i} className="block">
               {i > 0 && <span className="block text-2xl text-muted-foreground font-normal my-1">+</span>}
               {part.toUpperCase()}
@@ -691,7 +879,13 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
           ))}
         </h1>
 
-        {/* timer */}
+        {isFrozen && (
+          <div className="mb-8 px-4 py-3 bg-destructive/5 border border-destructive/10 rounded-2xl">
+            <p className="text-sm text-destructive font-medium">You're stuck. That's okay.</p>
+            <p className="text-xs text-muted-foreground mt-1">Just focus on moving one limb. Then stand up when you're ready. Scan the tag to clear this.</p>
+          </div>
+        )}
+
         {targetReached ? (
           <div className="mb-6 text-center">
             <p className="text-xs font-bold tracking-[0.25em] uppercase text-muted-foreground mb-1">Time's Up</p>
@@ -713,7 +907,6 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
           </p>
         )}
 
-        {/* +time buttons */}
         <div className="flex gap-3 mb-8">
           {[5, 10, 30].map(m => (
             <button
@@ -727,7 +920,6 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
           ))}
         </div>
 
-        {/* park / return instruction */}
         <div className="w-full max-w-xs rounded-3xl border-2 border-dashed border-border p-5 flex flex-col items-center gap-2">
           <Smartphone size={28} className="text-muted-foreground" strokeWidth={1.5} />
           {showReturnScan ? (
@@ -745,7 +937,6 @@ function InProgressView({ session, onScanResult: _onScanResult }: { session: any
           )}
         </div>
       </div>
-
     </div>
   );
 }

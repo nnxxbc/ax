@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, checkpointsTable, checkpointSessionsTable, dailyRoutinesTable, settingsTable } from "@workspace/db";
 
 export function getTodayDateString(): string {
@@ -17,8 +17,16 @@ export async function getOrCreateTodayRoutine() {
   const existing = await db
     .select()
     .from(dailyRoutinesTable)
-    .where(eq(dailyRoutinesTable.date, today));
-  if (existing.length > 0) return existing[0];
+    .where(eq(dailyRoutinesTable.date, today))
+    .orderBy(desc(dailyRoutinesTable.id));
+
+  // If there's an active routine, use it.
+  const active = existing.find(r => r.status === "active");
+  if (active) return active;
+
+  // If the latest routine is completed, we'll create a new one below.
+  // Unless we want to keep using the completed one for repetitions?
+  // The requirement says "begin a new cycle".
 
   const settings = await getOrCreateSettings();
   const energyMode = settings.defaultEnergyMode;
@@ -76,6 +84,9 @@ export async function enrichSession(session: {
     checkpointName: cp?.name ?? "Unknown",
     checkpointIcon: cp?.icon ?? "MapPin",
     checkpointLocation: cp?.location ?? null,
+    checkpointDefaultDurationMinutes: cp?.defaultDurationMinutes ?? 0,
+    checkpointMinDurationMinutes: cp?.minDurationMinutes ?? 0,
+    checkpointType: cp?.type ?? "standard",
     elapsedSeconds,
   };
 }
@@ -87,4 +98,39 @@ export async function getEnrichedSessions(routineId: number) {
     .where(eq(checkpointSessionsTable.routineId, routineId))
     .orderBy(checkpointSessionsTable.order);
   return Promise.all(sessions.map(enrichSession));
+}
+
+export async function updateRoutineCompletionStatus(routineId: number) {
+  const [routine] = await db.select().from(dailyRoutinesTable).where(eq(dailyRoutinesTable.id, routineId));
+  if (!routine || routine.status === "completed") return routine;
+
+  // Get all checkpoints that ARE required for this cycle
+  const requiredCheckpoints = await db
+    .select()
+    .from(checkpointsTable)
+    .where(and(eq(checkpointsTable.isActive, true), eq(checkpointsTable.isRequired, true)));
+
+  if (requiredCheckpoints.length === 0) return routine;
+
+  // Get all completed sessions for this routine
+  const completedSessions = await db
+    .select()
+    .from(checkpointSessionsTable)
+    .where(and(eq(checkpointSessionsTable.routineId, routineId), eq(checkpointSessionsTable.status, "completed")));
+
+  const completedCheckpointIds = new Set(completedSessions.map(s => s.checkpointId));
+
+  // Check if every required checkpoint has at least one completed session
+  const allRequiredDone = requiredCheckpoints.every(cp => completedCheckpointIds.has(cp.id));
+
+  if (allRequiredDone) {
+    const [updated] = await db
+      .update(dailyRoutinesTable)
+      .set({ status: "completed", completedAt: new Date().toISOString() })
+      .where(eq(dailyRoutinesTable.id, routineId))
+      .returning();
+    return updated;
+  }
+
+  return routine;
 }

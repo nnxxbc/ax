@@ -74,6 +74,10 @@ interface ScanDialogProps {
   existingTagId?: number;
   existingLabel?: string;
   existingCheckpointId?: number;
+  /** When provided, we start with this UID detected */
+  initialUid?: string;
+  /** When provided, we pre-select this checkpoint */
+  initialCheckpointId?: number;
 }
 
 function ScanDialog({
@@ -86,21 +90,28 @@ function ScanDialog({
   existingTagId,
   existingLabel = "",
   existingCheckpointId,
+  initialUid = "",
+  initialCheckpointId,
 }: ScanDialogProps) {
   const [mode, setMode] = useState<ScanMode>("idle");
-  const [detectedUid, setDetectedUid] = useState<string>("");
+  const [detectedUid, setDetectedUid] = useState<string>(initialUid);
   const [label, setLabel] = useState(existingLabel);
   const [checkpointId, setCheckpointId] = useState<number | undefined>(existingCheckpointId);
 
   // Sync props when dialog re-opens for a different tag
   useEffect(() => {
     if (open) {
-      setMode("idle");
-      setDetectedUid("");
+      if (initialUid) {
+        setMode("detected");
+        setDetectedUid(initialUid);
+      } else {
+        setMode("idle");
+        setDetectedUid("");
+      }
       setLabel(existingLabel);
-      setCheckpointId(existingCheckpointId);
+      setCheckpointId(existingCheckpointId ?? initialCheckpointId);
     }
-  }, [open, existingLabel, existingCheckpointId]);
+  }, [open, existingLabel, existingCheckpointId, initialUid, initialCheckpointId]);
 
   const handleTagDetected = useCallback((uid: string) => {
     setDetectedUid(uid);
@@ -111,8 +122,10 @@ function ScanDialog({
   const startScan = useCallback(async () => {
     setMode("scanning");
     setDetectedUid("");
+    console.debug("[NfcTags] startScan requested - calling NFCService.startScanning");
     try {
       await nfcService.startScanning(handleTagDetected);
+      console.debug("[NfcTags] NFCService.startScanning returned successfully");
     } catch (err) {
       console.error("[NfcTags] Scan failed:", err);
       setMode("error");
@@ -134,10 +147,16 @@ function ScanDialog({
   }, [open]);
 
   const handleSave = () => {
+    // On native platform, we MUST have a detected UID.
+    // Random generation is only for web simulation.
     const uid = detectedUid || (availability === "web_simulation"
       ? `sim-${Math.random().toString(36).substring(2, 8)}`
       : "");
-    if (!uid) { toast.error("No tag UID — scan a tag first"); return; }
+
+    if (!uid) {
+      toast.error(isNative ? "No tag detected — tap the tag to your phone" : "No tag UID");
+      return;
+    }
     onSave(uid, label, checkpointId);
   };
 
@@ -157,7 +176,7 @@ function ScanDialog({
             <p className="text-sm text-muted-foreground mt-1">
               {isSimMode
                 ? "Simulation mode — a random UID will be generated."
-                : "Hold your phone near the physical NFC tag."}
+                : "Ready to scan — hold phone near the physical NFC tag."}
             </p>
           </div>
 
@@ -382,8 +401,11 @@ function TestDialog({ open, onOpenChange, tag }: TestDialogProps) {
 // ─── Main NfcTags page ────────────────────────────────────────────────────────
 
 export function NfcTags() {
+  console.log("[NfcTags] Mount.");
   const queryClient = useQueryClient();
-  const { data: tags, isLoading } = useListNfcTags({
+  const isNative = nfcService.isNative();
+
+  const { data: tags, isLoading, error } = useListNfcTags({
     query: { queryKey: getListNfcTagsQueryKey() },
   });
   const { data: checkpoints } = useListCheckpoints({
@@ -394,25 +416,64 @@ export function NfcTags() {
   const updateTag = useUpdateNfcTag();
   const deleteTag = useDeleteNfcTag();
 
-  const [availability, setAvailability] = useState<NfcAvailability>("web_simulation");
+  const [availability, setAvailability] = useState<NfcAvailability>(isNative ? "native_available" : "web_simulation");
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<any>(null); // tag being edited/replaced
+  const [initialUid, setInitialUid] = useState<string>("");
+  const [initialCheckpointId, setInitialCheckpointId] = useState<number | undefined>(undefined);
   const [testTag, setTestTag] = useState<any>(null);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
 
-  // Check NFC availability on mount
+  // Check NFC availability on mount and handle registration redirect
   useEffect(() => {
     nfcService.getAvailability().then(setAvailability);
+
+    const params = new URLSearchParams(window.location.search);
+    const uid = params.get("uid");
+    const cpId = params.get("checkpointId");
+
+    if (uid || cpId) {
+      if (uid) setInitialUid(uid);
+      if (cpId) setInitialCheckpointId(Number(cpId));
+      setScanDialogOpen(true);
+      // Clean up URL
+      window.history.replaceState({}, "", "/nfc-tags");
+    }
   }, []);
 
   const allCheckpoints = Array.isArray(checkpoints) ? checkpoints : [];
 
+  const openAddDialog = () => {
+    setEditingTag(null);
+    setScanDialogOpen(true);
+  };
+
+  const openEditDialog = (tag: any) => {
+    setEditingTag(tag);
+    setScanDialogOpen(true);
+  };
+
+  const openTestDialog = (tag: any) => {
+    setTestTag(tag);
+    setTestDialogOpen(true);
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm("Delete this NFC tag mapping?")) return;
+    deleteTag.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListNfcTagsQueryKey() });
+          toast("Tag deleted");
+        },
+      }
+    );
+  };
+
   const handleSave = (uid: string, label: string, checkpointId?: number) => {
     if (editingTag) {
-      // Replacing a tag: if the UID changed, delete old + create new.
-      // If only label/checkpoint changed and UID is the same, just patch.
       if (uid !== editingTag.tagUid) {
-        // Delete old, then create new with the new UID
         deleteTag.mutate(
           { id: editingTag.id },
           {
@@ -434,7 +495,6 @@ export function NfcTags() {
           }
         );
       } else {
-        // Same UID — only label/checkpoint changed
         updateTag.mutate(
           { id: editingTag.id, data: { label: label || undefined, checkpointId } },
           {
@@ -449,7 +509,6 @@ export function NfcTags() {
         );
       }
     } else {
-      // New tag
       createTag.mutate(
         { data: { tagUid: uid, label: label || undefined, checkpointId } },
         {
@@ -467,33 +526,14 @@ export function NfcTags() {
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Delete this NFC tag mapping?")) return;
-    deleteTag.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListNfcTagsQueryKey() });
-          toast("Tag deleted");
-        },
-      }
-    );
-  };
-
-  const openAddDialog = () => {
-    setEditingTag(null);
-    setScanDialogOpen(true);
-  };
-
-  const openEditDialog = (tag: any) => {
-    setEditingTag(tag);
-    setScanDialogOpen(true);
-  };
-
-  const openTestDialog = (tag: any) => {
-    setTestTag(tag);
-    setTestDialogOpen(true);
-  };
+  console.log("[NfcTags] State:", {
+    tagsCount: tags?.length,
+    isLoading,
+    error: error ? (error as any).message : null
+  });
+  if (tags) {
+    console.log("[NfcTags] Full Data:", JSON.stringify(tags, null, 2));
+  }
 
   if (isLoading) {
     return (
@@ -503,7 +543,24 @@ export function NfcTags() {
     );
   }
 
+  if (!tags) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-background">
+        <div className="w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mb-4 text-destructive">
+          <SmartphoneNfc size={24} />
+        </div>
+        <h2 className="text-lg font-bold mb-2">Tags missing</h2>
+        <p className="text-sm text-muted-foreground mb-6">Network issue or empty database.</p>
+        <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: getListNfcTagsQueryKey() })}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   const isMutating = createTag.isPending || updateTag.isPending;
+
+  console.log("[NfcTags] Rendering successfully");
 
   return (
     <div className="flex-1 p-4 pb-8 flex flex-col gap-4">
@@ -602,7 +659,14 @@ export function NfcTags() {
       {/* Register / Edit dialog */}
       <ScanDialog
         open={scanDialogOpen}
-        onOpenChange={(v) => { setScanDialogOpen(v); if (!v) setEditingTag(null); }}
+        onOpenChange={(v) => {
+          setScanDialogOpen(v);
+          if (!v) {
+            setEditingTag(null);
+            setInitialUid("");
+            setInitialCheckpointId(undefined);
+          }
+        }}
         availability={availability}
         onSave={handleSave}
         checkpoints={allCheckpoints}
@@ -610,6 +674,8 @@ export function NfcTags() {
         existingTagId={editingTag?.id}
         existingLabel={editingTag?.label ?? ""}
         existingCheckpointId={editingTag?.checkpointId ?? undefined}
+        initialUid={initialUid}
+        initialCheckpointId={initialCheckpointId}
       />
 
       {/* Test dialog */}

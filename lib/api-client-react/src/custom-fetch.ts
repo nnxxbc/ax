@@ -120,8 +120,19 @@ function isTextMediaType(mediaType: string | null): boolean {
 function hasNoBody(response: Response, method: string): boolean {
   if (method === "HEAD") return true;
   if (NO_BODY_STATUS.has(response.status)) return true;
-  if (response.headers.get("content-length") === "0") return true;
-  if (response.body === null) return true;
+
+  // Do NOT trust content-length: 0 for successful data-carrying responses (200, 201).
+  // Some interceptors (like CapacitorHttp) may not populate it correctly.
+  if (response.status === 200 || response.status === 201) {
+      return false;
+  }
+
+  const contentLength = response.headers.get("content-length");
+  if (contentLength === "0") return true;
+
+  const body = (response as any).body;
+  if (body === null && contentLength === null) return true;
+
   return false;
 }
 
@@ -295,7 +306,17 @@ async function parseSuccessBody(
   responseType: "json" | "text" | "blob" | "auto",
   requestInfo: { method: string; url: string },
 ): Promise<unknown> {
-  if (hasNoBody(response, requestInfo.method)) {
+  // Check for pre-parsed CapacitorHttp data
+  if ((response as any).data !== undefined) {
+      const data = (response as any).data;
+      console.log(`[CustomFetch] Using pre-parsed CapacitorHttp data. Type: ${typeof data}`);
+      return data;
+  }
+
+  const empty = hasNoBody(response, requestInfo.method);
+  console.log(`[CustomFetch] parseSuccessBody. Empty: ${empty}, responseType: ${responseType}`);
+
+  if (empty) {
     return null;
   }
 
@@ -326,10 +347,13 @@ export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
 ): Promise<T> {
-  input = applyBaseUrl(input);
+  const finalUrl = resolveUrl(applyBaseUrl(input));
   const { responseType = "auto", headers: headersInit, ...init } = options;
-
   const method = resolveMethod(input, init.method);
+
+  console.log(`[CustomFetch] Request: ${method} ${finalUrl}`);
+
+  input = applyBaseUrl(input);
 
   if (init.body != null && (method === "GET" || method === "HEAD")) {
     throw new TypeError(`customFetch: ${method} requests cannot have a body.`);
@@ -358,14 +382,33 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  const headerObj: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    headerObj[key] = value;
+  });
+  console.log(`[CustomFetch] Request Headers:`, headerObj);
+
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  try {
+    const response = await fetch(input, { ...init, method, headers });
+    console.log(`[CustomFetch] Response: ${response.status} ${response.statusText} for ${finalUrl}`);
 
-  if (!response.ok) {
-    const errorData = await parseErrorBody(response, method);
-    throw new ApiError(response, errorData, requestInfo);
+    // Diagnostic logs for CapacitorHttp response structure
+    console.log("[CustomFetch] Response constructor:", response?.constructor?.name);
+    console.log("[CustomFetch] Response keys:", Object.keys(response ?? {}));
+    console.log("[CustomFetch] Response data:", JSON.stringify((response as any)?.data));
+    console.log("[CustomFetch] Response body type:", typeof response?.body);
+
+    if (!response.ok) {
+      const errorData = await parseErrorBody(response, method);
+      console.error(`[CustomFetch] API Error:`, errorData);
+      throw new ApiError(response, errorData, requestInfo);
+    }
+
+    return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  } catch (err) {
+    console.error(`[CustomFetch] Network/Fetch Error for ${finalUrl}:`, err);
+    throw err;
   }
-
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
 }

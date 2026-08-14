@@ -13,6 +13,14 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type CheckpointType = typeof CheckpointType[keyof typeof CheckpointType];
+
+export const CheckpointType = {
+  standard: 'standard',
+  bed: 'bed',
+  leaving_home: 'leaving_home',
+} as const;
+
 export interface Checkpoint {
   id: number;
   name: string;
@@ -25,6 +33,9 @@ export interface Checkpoint {
   defaultDurationMinutes: number;
   minDurationMinutes?: number;
   isActive: boolean;
+  isRequired: boolean;
+  isRepeatable: boolean;
+  type: CheckpointType;
   energyModes: string[];
   /** When true, the first NFC scan both starts and completes this checkpoint */
   completeOnFirstScan?: boolean;
@@ -42,6 +53,9 @@ export interface CheckpointInput {
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;
+  isRequired?: boolean;
+  isRepeatable?: boolean;
+  type?: CheckpointType;
   completeOnFirstScan?: boolean;
   energyModes?: string[];
 }
@@ -55,6 +69,9 @@ export interface CheckpointUpdate {
   defaultDurationMinutes?: number;
   minDurationMinutes?: number;
   isActive?: boolean;
+  isRequired?: boolean;
+  isRepeatable?: boolean;
+  type?: CheckpointType;
   completeOnFirstScan?: boolean;
   energyModes?: string[];
 }
@@ -122,6 +139,7 @@ export interface CheckpointSession {
   checkpointIcon?: string;
   /** @nullable */
   checkpointLocation?: string | null;
+  checkpointType?: CheckpointType;
   status: CheckpointSessionStatus;
   order: number;
   /** @nullable */
@@ -140,6 +158,8 @@ export interface CheckpointSession {
   skipReason?: string | null;
   /** @nullable */
   overrideReason?: string | null;
+  /** @nullable */
+  mode?: string | null;
 }
 
 export interface NfcScanResult {
@@ -150,6 +170,7 @@ export interface NfcScanResult {
   checkpointId: number | null;
   /** @nullable */
   checkpointName: string | null;
+  tagUid?: string | null;
   message?: string;
   /** @nullable */
   elapsedMinutes?: number | null;
@@ -229,6 +250,7 @@ export const SessionActionInputAction = {
 export interface SessionActionInput {
   action: SessionActionInputAction;
   reason?: string;
+  mode?: string;
   /** Minutes to add to the current session target (used with extend_time action) */
   additionalMinutes?: number;
 }
@@ -254,6 +276,16 @@ export const AppSettingsDefaultEnergyMode = {
   survival: 'survival',
 } as const;
 
+export type AppSettingsEnforcementLevel = typeof AppSettingsEnforcementLevel[keyof typeof AppSettingsEnforcementLevel];
+
+
+export const AppSettingsEnforcementLevel = {
+  off: 'off',
+  soft: 'soft',
+  focused: 'focused',
+  strict: 'strict',
+} as const;
+
 export interface AppSettings {
   id: number;
   /** @nullable */
@@ -268,6 +300,7 @@ export interface AppSettings {
   vibrationEnabled?: boolean;
   soundEnabled?: boolean;
   defaultEnergyMode?: AppSettingsDefaultEnergyMode;
+  enforcementLevel?: AppSettingsEnforcementLevel;
   simulationModeEnabled?: boolean;
   developerModeEnabled?: boolean;
 }
@@ -292,6 +325,7 @@ export interface AppSettingsUpdate {
   vibrationEnabled?: boolean;
   soundEnabled?: boolean;
   defaultEnergyMode?: AppSettingsUpdateDefaultEnergyMode;
+  enforcementLevel?: AppSettingsEnforcementLevel;
   simulationModeEnabled?: boolean;
   developerModeEnabled?: boolean;
 }

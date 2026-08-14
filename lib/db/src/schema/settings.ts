@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const settingsTable = pgTable("settings", {
   id: serial("id").primaryKey(),
@@ -15,10 +15,12 @@ export const settingsTable = pgTable("settings", {
   vibrationEnabled: boolean("vibration_enabled").notNull().default(true),
   soundEnabled: boolean("sound_enabled").notNull().default(false),
   defaultEnergyMode: text("default_energy_mode").notNull().default("full"),
+  // enforcement_level: off | soft | focused | strict
+  enforcementLevel: text("enforcement_level").notNull().default("off"),
   simulationModeEnabled: boolean("simulation_mode_enabled").notNull().default(true),
   developerModeEnabled: boolean("developer_mode_enabled").notNull().default(false),
 });
 
 export const insertSettingsSchema = createInsertSchema(settingsTable).omit({ id: true });
-export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+export type InsertSettings = typeof settingsTable.$inferInsert;
 export type Settings = typeof settingsTable.$inferSelect;

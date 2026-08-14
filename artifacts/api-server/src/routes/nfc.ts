@@ -89,23 +89,37 @@ router.delete("/nfc-tags/:id", async (req, res): Promise<void> => {
 
 // --- NFC Scan ---
 router.post("/nfc/scan", async (req, res): Promise<void> => {
-  const parsed = HandleNfcScanBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
+  try {
+    const parsed = HandleNfcScanBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    // Find checkpoint by tag UID
+    const [tag] = await db.select().from(nfcTagsTable).where(eq(nfcTagsTable.tagUid, parsed.data.tagUid));
+    if (!tag) {
+      res.json({ action: "unknown_tag", sessionId: null, checkpointId: null, checkpointName: null, tagUid: parsed.data.tagUid, message: "Tag not registered" });
+      return;
+    }
+    if (!tag.checkpointId) {
+      res.json({ action: "no_checkpoint_assigned", sessionId: null, checkpointId: null, checkpointName: null, message: "Tag has no checkpoint assigned" });
+      return;
+    }
+    const result = await processNfcScan(req, tag.checkpointId);
+    res.json(result);
+  } catch (err: any) {
+    req.log.error({ err, stack: err.stack, body: req.body }, "CRITICAL NFC Scan error");
+    try {
+        await logEvent(req, "nfc_scan_error", `Error: ${err.message}`, { details: err.stack });
+    } catch (logErr) {
+        req.log.error({ logErr }, "Failed to log error to database");
+    }
+    res.status(500).json({
+      error: "NFC_SCAN_FAILED",
+      message: err.message,
+      details: err.stack,
+    });
   }
-  // Find checkpoint by tag UID
-  const [tag] = await db.select().from(nfcTagsTable).where(eq(nfcTagsTable.tagUid, parsed.data.tagUid));
-  if (!tag) {
-    res.json({ action: "unknown_tag", sessionId: null, checkpointId: null, checkpointName: null, message: "Tag not registered" });
-    return;
-  }
-  if (!tag.checkpointId) {
-    res.json({ action: "no_checkpoint_assigned", sessionId: null, checkpointId: null, checkpointName: null, message: "Tag has no checkpoint assigned" });
-    return;
-  }
-  const result = await processNfcScan(req, tag.checkpointId);
-  res.json(result);
 });
 
 router.post("/nfc/simulate", async (req, res): Promise<void> => {

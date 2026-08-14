@@ -1,26 +1,41 @@
 import * as React from "react";
 import { Link, useLocation } from "wouter";
 import { Home, Grid, Calendar, Sparkles, Settings } from "lucide-react";
-import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, getGetSettingsQueryKey, useGetTodayRoutine, getGetTodayRoutineQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  console.log(`[AppLayout] Rendering. Location: ${location}`);
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const { data: routine } = useGetTodayRoutine({
+    query: { queryKey: getGetTodayRoutineQueryKey(), refetchInterval: 5000 },
+  });
+
+  const inProgress = routine?.sessions?.some((s: any) => s.status === "in_progress");
+  const isStrict = settings?.enforcementLevel === "strict";
+  const isFocused = settings?.enforcementLevel === "focused";
+
+  const showNav = !isFocused || !inProgress;
+  const navDisabled = isStrict && inProgress;
 
   return (
     <div className="mx-auto w-full max-w-[430px] min-h-[100dvh] bg-background flex flex-col relative shadow-2xl shadow-black/5 sm:border-x sm:border-border/50">
-      <main className="flex-1 overflow-y-auto pb-24 no-scrollbar relative flex flex-col">
+      {/* Scrollable content area */}
+      <main className="flex-1 overflow-y-auto pb-[108px] no-scrollbar relative flex flex-col pt-safe">
         {children}
       </main>
 
-      <nav className="absolute bottom-0 left-0 right-0 h-[88px] glass-panel border-t border-border flex items-center justify-around px-2 z-50 rounded-t-[2rem]">
-        <NavItem icon={Home}     label="Home"       path="/"            isActive={location === "/"} />
-        <NavItem icon={Grid}     label="Stations"   path="/simulate"    isActive={location === "/simulate"} />
-        <NavItem icon={Calendar} label="History"    path="/history"     isActive={location === "/history"} />
-        <NavItem icon={Sparkles} label="Insights"   path="/insights"    isActive={location === "/insights"} />
-        <NavItem icon={Settings} label="Settings"   path="/settings"    isActive={["/settings", "/nfc-tags", "/checkpoints"].includes(location)} />
-      </nav>
+      {/* Fixed Bottom Navigation */}
+      {showNav && (
+        <nav className={`fixed bottom-0 left-0 right-0 h-[88px] glass-panel border-t border-border flex items-center justify-around px-2 z-50 rounded-t-[2rem] max-w-[430px] mx-auto pb-safe transition-opacity ${navDisabled ? "opacity-40 grayscale pointer-events-none" : ""}`}>
+          <NavItem icon={Home}     label="Home"       path="/"            isActive={location === "/"} />
+          <NavItem icon={Grid}     label="Stations"   path="/checkpoints" isActive={location === "/checkpoints"} />
+          <NavItem icon={Calendar} label="History"    path="/history"     isActive={location === "/history"} />
+          <NavItem icon={Sparkles} label="Insights"   path="/insights"    isActive={location === "/insights"} />
+          <NavItem icon={Settings} label="Settings"   path="/settings"    isActive={["/settings", "/nfc-tags", "/checkpoints"].includes(location)} />
+        </nav>
+      )}
     </div>
   );
 }

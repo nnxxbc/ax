@@ -2,7 +2,7 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db, checkpointSessionsTable, checkpointsTable } from "@workspace/db";
 import { SessionActionParams, SessionActionBody } from "@workspace/api-zod";
-import { enrichSession } from "../lib/routine-helpers";
+import { enrichSession, updateRoutineCompletionStatus } from "../lib/routine-helpers";
 import { logEvent } from "../lib/event-logger";
 
 const router = Router();
@@ -31,9 +31,11 @@ router.post("/sessions/:id/action", async (req, res): Promise<void> => {
 
   const [cp] = await db.select().from(checkpointsTable).where(eq(checkpointsTable.id, session.checkpointId));
   const cpName = cp?.name ?? "Unknown";
-  const { action, reason } = bodyParsed.data;
+  const { action, reason, mode } = bodyParsed.data;
   const now = new Date().toISOString();
   let updates: Record<string, unknown> = {};
+
+  if (mode) updates.mode = mode;
 
   switch (action) {
     case "start":
@@ -88,6 +90,11 @@ router.post("/sessions/:id/action", async (req, res): Promise<void> => {
       .set(updates)
       .where(eq(checkpointSessionsTable.id, session.id))
       .returning();
+
+    if (updates.status === "completed" || updates.status === "skipped") {
+      await updateRoutineCompletionStatus(session.routineId);
+    }
+
     res.json(await enrichSession(updated));
     return;
   }

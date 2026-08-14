@@ -29,6 +29,22 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Debug middleware
+app.use((req, res, next) => {
+  logger.info({ url: req.url, method: req.method, body: req.body }, "Incoming Request");
+  next();
+});
+
 app.use("/api", router);
+
+// Custom Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  logger.error({ err, url: req.url, method: req.method }, "Unhandled API Error");
+  res.status(err.status || 500).json({
+    error: "UNHANDLED_ERROR",
+    message: err.message,
+    details: err.stack,
+  });
+});
 
 export default app;

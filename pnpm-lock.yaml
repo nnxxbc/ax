@@ -61,7 +61,7 @@ catalogs:
       specifier: ^4.1.14
       version: 4.3.3
     tsx:
-      specifier: ^4.21.0
+      specifier: ^4.23.1
       version: 4.23.1
     vite:
       specifier: ^7.3.2
@@ -173,6 +173,9 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.1
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -423,6 +426,9 @@ importers:
       '@capacitor/core':
         specifier: ^8.5.0
         version: 8.5.0
+      '@capacitor/local-notifications':
+        specifier: ^8.2.1
+        version: 8.2.1(@capacitor/core@8.5.0)
       '@capgo/capacitor-nfc':
         specifier: ^8.2.3
         version: 8.2.3(@capacitor/core@8.5.0)
@@ -770,6 +776,11 @@ packages:
 
   '@capacitor/core@8.5.0':
     resolution: {integrity: sha512-Ca4krtqH1hothjtBIwf2J2TW7IhYq1ujp8QeItTiJohNsqij8ja2DYYH3DU0l8RmxCWaBAFTGA2TgOgOMCSNsQ==}
+
+  '@capacitor/local-notifications@8.2.1':
+    resolution: {integrity: sha512-Bkim+MGl7UrDTjDferV4ECq0aWciTsa0k15+MX2jnx2PeWgEPvlBy5yrqzBlwEZPrtHFUvPVxPi5V66MPGHkAw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capgo/capacitor-nfc@8.2.3':
     resolution: {integrity: sha512-W/KZrDiYW5cDs3TvCzJB41SqpRP22Gi/XDlyOBqCUKF43l3+vnBZH/XpgLgSjgZqZkk1hCoZ6v9jW+d/msH+Bw==}
@@ -3587,6 +3598,10 @@ snapshots:
   '@capacitor/core@8.5.0':
     dependencies:
       tslib: 2.8.1
+
+  '@capacitor/local-notifications@8.2.1(@capacitor/core@8.5.0)':
+    dependencies:
+      '@capacitor/core': 8.5.0
 
   '@capgo/capacitor-nfc@8.2.3(@capacitor/core@8.5.0)':
     dependencies:

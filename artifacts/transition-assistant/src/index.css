@@ -122,6 +122,8 @@
     /* Soft overall background pattern/noise for warmth */
     background-image: radial-gradient(hsl(var(--muted)) 1px, transparent 1px);
     background-size: 24px 24px;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

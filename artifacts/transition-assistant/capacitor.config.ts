@@ -21,7 +21,7 @@ const config: CapacitorConfig = {
   appName: "Transition Assistant",
   webDir: "dist/public",
   server: {
-    androidScheme: "http",
+    androidScheme: "https",
   },
 
   // ── Android-specific settings ─────────────────────────────────────────────
@@ -32,7 +32,10 @@ const config: CapacitorConfig = {
 
   // ── Plugins ───────────────────────────────────────────────────────────────
   plugins: {
-    // @capawesome-team/capacitor-nfc — no per-plugin config required;
+    CapacitorHttp: {
+      enabled: true,
+    },
+    // @capgo/capacitor-nfc — no per-plugin config required;
     // permissions are declared in AndroidManifest.xml (see docs below).
   },
 
