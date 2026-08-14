@@ -5,6 +5,12 @@ import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+// Lightweight endpoint for the keep-alive self-ping (see index.ts).
+// No DB access — just proves the process is awake and serving requests.
+router.get("/ping", (_req, res) => {
+  res.json({ status: "ok", ts: Date.now() });
+});
+
 router.get("/healthz", async (_req, res) => {
   try {
     // Attempt to list columns to verify schema
