@@ -37,6 +37,7 @@ const cp = (overrides: Partial<LocalCheckpoint> = {}): LocalCheckpoint => ({
   targetDurationMinutes: 30,
   completeOnFirstScan: false,
   checkpointType: "standard",
+  isRepeatable: true,
   ...overrides,
 });
 
@@ -147,6 +148,36 @@ test("Repeatable checkpoints: completing one, then scanning again, starts a bran
   r = processLocalScan(sessions, cp(), "1", now3); // repeat
   assert.equal(r.action, "repeat_started");
   assert.equal(r.sessions.filter(s => s.checkpointId === 1).length, 2, "history of the first completion must be preserved, not overwritten");
+});
+
+test("Non-repeatable checkpoint: re-scanning after completion is a no-op, not a duplicate", () => {
+  const now1 = new Date("2026-08-14T09:00:00.000Z");
+  let sessions = [waitingSession()];
+  let r = processLocalScan(sessions, cp({ isRepeatable: false }), "1", now1); // start
+  sessions = r.sessions;
+  const now2 = new Date("2026-08-14T09:10:00.000Z");
+  r = processLocalScan(sessions, cp({ isRepeatable: false }), "1", now2); // complete
+  sessions = r.sessions;
+  assert.equal(sessions.filter(s => s.checkpointId === 1).length, 1);
+  assert.equal(sessions[0].status, "completed");
+
+  const now3 = new Date("2026-08-14T12:00:00.000Z");
+  r = processLocalScan(sessions, cp({ isRepeatable: false }), "1", now3); // accidental re-scan
+
+  assert.equal(r.action, "already_completed");
+  assert.equal(r.session.id, sessions[0].id, "should point back at the existing completed session");
+  assert.equal(r.sessions, sessions, "no new session created, nothing mutated");
+  assert.equal(r.sessions.filter(s => s.checkpointId === 1).length, 1, "must not duplicate");
+});
+
+test("Non-repeatable checkpoint: first scan of the day still works normally (no prior session yet)", () => {
+  const sessions: LocalSession[] = [];
+  const now = new Date("2026-08-14T09:00:00.000Z");
+  const result = processLocalScan(sessions, cp({ isRepeatable: false }), "1", now);
+
+  assert.equal(result.action, "repeat_started");
+  assert.equal(result.session.status, "in_progress");
+  assert.equal(result.sessions.length, 1);
 });
 
 test("Test 6 — restart recovery: elapsed time is computed from timestamps, not a running timer", () => {

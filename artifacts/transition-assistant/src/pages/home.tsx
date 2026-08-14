@@ -570,6 +570,9 @@ export function Home() {
             message: `You've been here a little while — minimum time hasn't passed yet.`,
           });
           return; // nothing to sync — no state changed
+        case "already_completed":
+          toast(`${result.session.checkpointName} is already done for today.`);
+          return; // nothing to sync — no state changed
       }
 
       // 3. Durable local persistence + background sync — never required for
@@ -595,6 +598,7 @@ export function Home() {
         targetDurationMinutes: cp.defaultDurationMinutes ?? 0,
         completeOnFirstScan: !!cp.completeOnFirstScan,
         checkpointType: cp.type,
+        isRepeatable: cp.isRepeatable !== false,
       };
       const currentSessions = (routine?.sessions ?? []).map(toLocalSession);
       const result = processLocalScan(currentSessions, localCheckpoint, String(routine?.id ?? getCachedRoutineId() ?? ""));

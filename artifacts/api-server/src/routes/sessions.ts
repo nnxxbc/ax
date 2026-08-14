@@ -102,4 +102,20 @@ router.post("/sessions/:id/action", async (req, res): Promise<void> => {
   res.json(await enrichSession(session));
 });
 
+// Deletes a single session row outright — for cleaning up stray/duplicate
+// sessions (e.g. from the isRepeatable scan-guard bug where a re-scan of a
+// one-time checkpoint used to create an extra row). Unlike the "cancel"
+// action above, this actually removes the row so it stops cluttering the
+// routine list, rather than just changing its status.
+router.delete("/sessions/:id", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(rawId);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  await db.delete(checkpointSessionsTable).where(eq(checkpointSessionsTable.id, id));
+  res.status(204).send();
+});
+
 export default router;

@@ -41,13 +41,18 @@ export interface LocalCheckpoint {
   targetDurationMinutes: number | null;
   completeOnFirstScan: boolean;
   checkpointType?: string;
+  /** "Repeatable" toggle from the Stations edit screen. Defaults to true to
+   * match the checkpoints table's own default, so existing callers that
+   * don't pass it keep today's unlimited-repeat behavior. */
+  isRepeatable?: boolean;
 }
 
 export type ScanAction =
   | "started"
   | "completed"
   | "early_complete_warning"
-  | "repeat_started";
+  | "repeat_started"
+  | "already_completed";
 
 export interface ScanResult {
   action: ScanAction;
@@ -143,8 +148,24 @@ export function processLocalScan(
     };
   }
 
-  // No waiting/in_progress session for this checkpoint — flexible order lets
-  // any checkpoint be (re)started at any time, unlimited repeats.
+  // No waiting/in_progress session for this checkpoint. If it's marked
+  // not-repeatable and it's already done today, re-scanning it shouldn't
+  // silently pile up a duplicate entry in the routine list — treat it as a
+  // no-op and point back at the existing completed session.
+  if (checkpoint.isRepeatable === false) {
+    const alreadyDone = forCheckpoint.find((s) => s.status === "completed");
+    if (alreadyDone) {
+      return {
+        action: "already_completed",
+        session: alreadyDone,
+        sessions,
+        elapsedMinutes: 0,
+      };
+    }
+  }
+
+  // Flexible order lets any (repeatable) checkpoint be (re)started at any
+  // time, unlimited repeats.
   const created: LocalSession = {
     id: newLocalId(),
     routineId,

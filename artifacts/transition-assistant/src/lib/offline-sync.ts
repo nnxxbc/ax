@@ -93,6 +93,7 @@ export function toLocalCheckpoint(c: any): LocalCheckpoint {
     targetDurationMinutes: c.defaultDurationMinutes ?? 0,
     completeOnFirstScan: !!c.completeOnFirstScan,
     checkpointType: c.type,
+    isRepeatable: c.isRepeatable !== false,
   };
 }
 

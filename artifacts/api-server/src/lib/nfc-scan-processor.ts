@@ -183,6 +183,29 @@ export async function processNfcScan(req: Request, checkpointId: number, opts: {
     };
   }
 
+  // No in_progress or waiting session for today. Before creating a new
+  // repeat session, respect the checkpoint's own "Repeatable" setting
+  // (isRepeatable — set via the Stations edit screen). Without this guard,
+  // re-scanning a tag for a one-time checkpoint (e.g. Out of Bed) after
+  // it's already done today silently added a duplicate entry to the
+  // routine list every time.
+  if (!checkpoint.isRepeatable) {
+    const alreadyDone = sessions.find((s) => s.status === "completed" || s.status === "skipped");
+    if (alreadyDone) {
+      req.log.info({ sessionId: alreadyDone.id }, "Non-repeatable checkpoint already done today — ignoring re-scan");
+      return {
+        action: "already_completed",
+        sessionId: alreadyDone.id,
+        checkpointId,
+        checkpointName: checkpoint.name,
+        message: `${checkpoint.name} is already done for today.`,
+        elapsedMinutes: null,
+        targetMinutes: null,
+        session: await enrichSession(alreadyDone),
+      };
+    }
+  }
+
   // No in_progress or waiting session -> Create a new repeatable session
   req.log.info("No active session found. Creating new repeat session.");
   const nowIso = new Date().toISOString();

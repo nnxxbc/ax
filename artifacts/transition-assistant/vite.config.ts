@@ -5,29 +5,30 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
+// Defaults to "/" (the only value the Android/Capacitor build ever needs —
+// see capacitor.config.ts) so `pnpm run build` works with no env vars set.
+// Override with BASE_PATH if this is ever built for hosting under a subpath.
+const basePath = process.env.BASE_PATH || '/';
 
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
+export default defineConfig(async ({ command }) => {
+  // PORT only matters for the dev/preview server — `vite build` (used for
+  // the Capacitor Android bundle) never binds a port, so don't force
+  // callers of `build` to set one. `vite`/`vite preview` still require it.
+  let port = 5173;
+  if (command === 'serve') {
+    const rawPort = process.env.PORT;
+    if (!rawPort) {
+      throw new Error(
+        'PORT environment variable is required but was not provided.',
+      );
+    }
+    port = Number(rawPort);
+    if (Number.isNaN(port) || port <= 0) {
+      throw new Error(`Invalid PORT value: "${rawPort}"`);
+    }
+  }
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
-}
-
-export default defineConfig({
+  return {
   base: basePath,
   plugins: [
     react(),
@@ -78,4 +79,5 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
+  };
 });
