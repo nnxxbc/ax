@@ -38,7 +38,8 @@ import {
   cacheCheckpoints, getCachedCheckpoints,
   queueCheckpointScan, flushSyncQueue, recordScanDiagnostics, sendSyncEvent,
 } from "@/lib/offline-sync";
-import { startBackgroundSync, pendingCount } from "@/lib/sync-queue";
+import { startBackgroundSync, pendingCount, getQueue } from "@/lib/sync-queue";
+import { reconcilePendingSessions } from "@/lib/sync-reconcile";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -245,7 +246,26 @@ function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: U
 export function Home() {
   const queryClient = useQueryClient();
   const { data: routine, isLoading } = useGetTodayRoutine({
-    query: { queryKey: getGetTodayRoutineQueryKey(), refetchInterval: 3000 },
+    query: {
+      queryKey: getGetTodayRoutineQueryKey(),
+      refetchInterval: 3000,
+      // Bugfix: a background poll can land after a scan updated the UI
+      // locally but before the queued sync event has reached the server —
+      // without this, that poll's stale response silently reverts the
+      // just-completed checkpoint back to its previous state (reported as
+      // "scan Out of Bed, briefly see Foam Roller, then it snaps back and
+      // I'm stuck"). Protect any session with an unsynced queue entry.
+      select: (data: any) => {
+        if (!data?.sessions) return data;
+        const pendingIds = new Set(
+          getQueue()
+            .filter((e) => e.syncStatus !== "synced" && e.sessionId)
+            .map((e) => e.sessionId as string),
+        );
+        if (pendingIds.size === 0) return data;
+        return { ...data, sessions: reconcilePendingSessions(data.sessions, getCachedSessions(), pendingIds) };
+      },
+    },
   });
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const startRoutine = useStartTodayRoutine();
