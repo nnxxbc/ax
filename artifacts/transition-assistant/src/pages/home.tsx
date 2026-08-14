@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 import { nfcService } from "@/services/nfc-service";
+import { registerHomeScanHandler, takePendingScan } from "@/lib/nfc-scan-bridge";
 import { notificationService } from "@/services/notification-service";
 import { alarmService } from "@/services/alarm-service";
 import { isAlarmActiveNow, dateKey } from "@/lib/alarm-rules";
@@ -209,8 +210,6 @@ interface UseHomeNfcOptions {
 }
 
 function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: UseHomeNfcOptions) {
-  const isNative = nfcService.isNative();
-
   // Keep fresh refs so the callback closure doesn't go stale
   const expectedRef = useRef(expectedCheckpointId);
   const tagsRef = useRef(nfcTags);
@@ -227,26 +226,19 @@ function useHomeNfc({ expectedCheckpointId, onScan, onWrongStation, nfcTags }: U
     onScanRef.current(uid);
   }, []);
 
-  // Listens whenever Home is open natively — NOT gated on there being a
-  // current in-progress/waiting checkpoint. That gate used to mean a scan
-  // of ANY tag (e.g. a standalone "bed check" checkpoint meant to be used
-  // any time, including after the whole day's routine is already done)
-  // silently did nothing: the reader simply wasn't running, so the scan
-  // was never even seen by the app. handleScanResult already resolves and
-  // handles any tag correctly regardless of routine progress — this hook
-  // only needs to make sure the reader is actually on to feed it.
+  // The actual NFC reader is owned app-wide by app-layout.tsx (it never
+  // unmounts, so the reader stays on regardless of which screen is up —
+  // see nfc-scan-bridge.ts for why: a scan while on any screen other than
+  // Home used to hit dead air, with Android falling back to its own "No
+  // supported application for this NFC Tag" toast). Home just registers
+  // itself as the current handler while it's the visible screen, and picks
+  // up anything that arrived while it wasn't.
   useEffect(() => {
-    if (!isNative) {
-      nfcService.stopScanning();
-      return;
-    }
-
-    nfcService.startScanning(handleTag);
-
-    return () => {
-      nfcService.stopScanning();
-    };
-  }, [isNative, handleTag]);
+    registerHomeScanHandler(handleTag);
+    const pending = takePendingScan();
+    if (pending) handleTag(pending);
+    return () => registerHomeScanHandler(null);
+  }, [handleTag]);
 }
 
 // ─── Home ─────────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { EmergencyUnlock } from "./emergency-unlock";
 import { QuickCaptureFab } from "@/components/thought-capture/quick-capture-fab";
 import { effectiveEnforcementLevel } from "@/lib/enforcement";
+import { nfcService } from "@/services/nfc-service";
+import { dispatchScan } from "@/lib/nfc-scan-bridge";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -42,6 +44,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const showNav = !isFocused || !inProgress;
   const navDisabled = isStrict && inProgress && !emergencyUnlocked;
+
+  // The NFC reader is owned here, app-wide, because AppLayout never
+  // unmounts while the app is open — unlike a per-page effect (the old
+  // approach), this means scanning a tag works from any screen, not just
+  // Home. Without this, a scan made while on Settings/Stations/etc. hit no
+  // listener at all and Android fell back to showing its own "No supported
+  // application for this NFC Tag" toast, even for a perfectly valid,
+  // already-registered station tag. See nfc-scan-bridge.ts — Home
+  // registers itself as the live handler while it's the visible screen and
+  // still owns all the actual scan-reaction UI (Bed Station dialog, alarm
+  // dismissal, etc); this effect only ever starts/stops the physical
+  // reader itself.
+  useEffect(() => {
+    if (!nfcService.isNative()) return;
+    nfcService.startScanning(dispatchScan);
+    return () => {
+      nfcService.stopScanning();
+    };
+  }, []);
 
   return (
     <div className="mx-auto w-full max-w-[430px] min-h-[100dvh] bg-background flex flex-col relative shadow-2xl shadow-black/5 sm:border-x sm:border-border/50">
