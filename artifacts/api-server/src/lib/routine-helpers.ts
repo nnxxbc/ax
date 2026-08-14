@@ -1,6 +1,6 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db, checkpointsTable, checkpointSessionsTable, dailyRoutinesTable, settingsTable } from "@workspace/db";
-import { isScheduledForDay, dayOfWeekFromDateString } from "./schedule-helpers";
+import { isScheduledForDay, dayOfWeekFromDateString, sortSessionsByCheckpointOrder } from "./schedule-helpers";
 
 export function getTodayDateString(): string {
   return new Date().toISOString().split("T")[0];
@@ -21,9 +21,17 @@ export async function getOrCreateTodayRoutine() {
     .where(eq(dailyRoutinesTable.date, today))
     .orderBy(desc(dailyRoutinesTable.id));
 
-  // If there's an active routine, use it.
+  // If there's an active routine, use it — but first bring its sessions in
+  // line with whatever the checkpoints look like *right now*. Karen can
+  // reorder stations or change a checkpoint's days at any time via the
+  // Stations screen, including mid-day after today's routine already
+  // exists; without this, those edits would silently only take effect
+  // tomorrow.
   const active = existing.find(r => r.status === "active");
-  if (active) return active;
+  if (active) {
+    await reconcileTodaySessions(active);
+    return active;
+  }
 
   // If the latest routine is completed, we'll create a new one below.
   // Unless we want to keep using the completed one for repetitions?
@@ -36,20 +44,52 @@ export async function getOrCreateTodayRoutine() {
     .values({ date: today, energyMode, status: "active", createdAt: new Date().toISOString() })
     .returning();
 
-  // Create sessions for active checkpoints matching this energy mode
-  const checkpoints = await db
+  await reconcileTodaySessions(routine);
+
+  return routine;
+}
+
+/**
+ * Keeps a routine's sessions in sync with the *current* checkpoint config
+ * (order + energy mode + days of week), not just whatever was true the
+ * moment the routine was first created. Two things it does, both
+ * non-destructive to anything already touched today:
+ *   - adds a "waiting" session for any active, eligible checkpoint that
+ *     doesn't have one yet for this routine (covers: newly created
+ *     checkpoints, and checkpoints whose days-of-week now include today
+ *     when they didn't before).
+ *   - removes a "waiting" (never started) session for a checkpoint that's
+ *     no longer active or no longer scheduled for today. A session that's
+ *     already in_progress/completed/skipped/etc. is left alone — a
+ *     checkpoint config change never erases real progress.
+ * Session *order* is intentionally NOT re-synced here — getEnrichedSessions
+ * always sorts by the checkpoint's current order at read time, so reorders
+ * show up immediately without needing to touch stored session rows at all.
+ */
+async function reconcileTodaySessions(routine: { id: number; date: string; energyMode: string }) {
+  const checkpoints = await db.select().from(checkpointsTable).where(eq(checkpointsTable.isActive, true));
+  const todayDayOfWeek = dayOfWeekFromDateString(routine.date);
+
+  const eligibleCheckpointIds = new Set(
+    checkpoints
+      .filter((cp) => {
+        const modes: string[] = JSON.parse(cp.energyModes);
+        if (!modes.includes(routine.energyMode)) return false;
+        const days: number[] = JSON.parse(cp.daysOfWeek ?? "[]");
+        return isScheduledForDay(days, todayDayOfWeek);
+      })
+      .map((cp) => cp.id),
+  );
+
+  const existingSessions = await db
     .select()
-    .from(checkpointsTable)
-    .where(eq(checkpointsTable.isActive, true))
-    .orderBy(checkpointsTable.order);
+    .from(checkpointSessionsTable)
+    .where(eq(checkpointSessionsTable.routineId, routine.id));
+  const checkpointIdsWithSessions = new Set(existingSessions.map((s) => s.checkpointId));
 
-  const todayDayOfWeek = dayOfWeekFromDateString(today);
-
+  // Add sessions for newly-eligible checkpoints.
   for (const cp of checkpoints) {
-    const modes: string[] = JSON.parse(cp.energyModes);
-    if (!modes.includes(energyMode)) continue;
-    const days: number[] = JSON.parse(cp.daysOfWeek ?? "[]");
-    if (!isScheduledForDay(days, todayDayOfWeek)) continue;
+    if (!eligibleCheckpointIds.has(cp.id) || checkpointIdsWithSessions.has(cp.id)) continue;
     await db.insert(checkpointSessionsTable).values({
       routineId: routine.id,
       checkpointId: cp.id,
@@ -61,7 +101,12 @@ export async function getOrCreateTodayRoutine() {
     });
   }
 
-  return routine;
+  // Remove never-started sessions for checkpoints that are no longer eligible.
+  for (const session of existingSessions) {
+    if (session.status !== "waiting") continue;
+    if (eligibleCheckpointIds.has(session.checkpointId)) continue;
+    await db.delete(checkpointSessionsTable).where(eq(checkpointSessionsTable.id, session.id));
+  }
 }
 
 export async function enrichSession(session: {
@@ -100,9 +145,12 @@ export async function getEnrichedSessions(routineId: number) {
   const sessions = await db
     .select()
     .from(checkpointSessionsTable)
-    .where(eq(checkpointSessionsTable.routineId, routineId))
-    .orderBy(checkpointSessionsTable.order);
-  return Promise.all(sessions.map(enrichSession));
+    .where(eq(checkpointSessionsTable.routineId, routineId));
+  const checkpoints = await db.select().from(checkpointsTable);
+  const orderByCheckpointId = new Map(checkpoints.map((cp) => [cp.id, cp.order]));
+  const sorted = sortSessionsByCheckpointOrder(sessions, orderByCheckpointId);
+
+  return Promise.all(sorted.map(enrichSession));
 }
 
 export async function updateRoutineCompletionStatus(routineId: number) {
