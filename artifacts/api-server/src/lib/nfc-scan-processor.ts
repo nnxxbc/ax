@@ -88,9 +88,13 @@ export async function processNfcScan(req: Request, checkpointId: number) {
     }
 
     req.log.info({ sessionId: inProgress.id }, "Updating session to completed");
+
+    // Round to 4 decimal places to avoid very long float issues
+    const roundedMinutes = Math.round(elapsedMinutes * 10000) / 10000;
+
     const [updated] = await db
       .update(checkpointSessionsTable)
-      .set({ status: "completed", completedAt: nowDate.toISOString(), durationMinutes: elapsedMinutes })
+      .set({ status: "completed", completedAt: nowDate.toISOString(), durationMinutes: roundedMinutes })
       .where(eq(checkpointSessionsTable.id, inProgress.id))
       .returning();
 

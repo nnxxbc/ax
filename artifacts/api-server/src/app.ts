@@ -59,10 +59,11 @@ app.use((err: any, req: any, res: any, next: any) => {
 
   res.status(err.status || 500).json({
     error: "UNHANDLED_ERROR",
-    message: err.message,
+    message: err.message || "No error message",
     details: err.stack,
     pg_hint: err.hint,
     pg_detail: err.detail,
+    pg_code: err.code
   });
 });
 
