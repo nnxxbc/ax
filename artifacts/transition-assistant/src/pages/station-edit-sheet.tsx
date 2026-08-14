@@ -57,6 +57,16 @@ const ENERGY_MODES = [
   { value: "survival", label: "Survival" },
 ];
 
+// Phase 3, Feature 5 — per-checkpoint enforcement override. null = inherit
+// the global enforcement level from Settings.
+const ENFORCEMENT_OVERRIDES: { value: string | null; label: string }[] = [
+  { value: null, label: "Inherit" },
+  { value: "off", label: "Off" },
+  { value: "soft", label: "Soft" },
+  { value: "focused", label: "Focused" },
+  { value: "strict", label: "Strict" },
+];
+
 interface StationEditSheetProps {
   checkpoint: Checkpoint | null;
   open: boolean;
@@ -75,6 +85,7 @@ export function StationEditSheet({ checkpoint, open, onOpenChange }: StationEdit
   const [minDuration, setMinDuration] = useState(0);
   const [isActive, setIsActive] = useState(true);
   const [energyModes, setEnergyModes] = useState<string[]>(["full", "reduced", "survival"]);
+  const [enforcementOverride, setEnforcementOverride] = useState<string | null>(null);
 
   useEffect(() => {
     if (checkpoint) {
@@ -86,6 +97,7 @@ export function StationEditSheet({ checkpoint, open, onOpenChange }: StationEdit
       setMinDuration(checkpoint.minDurationMinutes ?? 0);
       setIsActive(checkpoint.isActive);
       setEnergyModes(checkpoint.energyModes ?? ["full", "reduced", "survival"]);
+      setEnforcementOverride((checkpoint as any).enforcementOverride ?? null);
     }
   }, [checkpoint]);
 
@@ -113,6 +125,7 @@ export function StationEditSheet({ checkpoint, open, onOpenChange }: StationEdit
           minDurationMinutes: Math.min(minDuration, defaultDuration),
           isActive,
           energyModes,
+          enforcementOverride,
         } as any,
       },
       {
@@ -240,6 +253,27 @@ export function StationEditSheet({ checkpoint, open, onOpenChange }: StationEdit
                 <p className="text-sm text-muted-foreground">Include this station in routines</p>
               </div>
               <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </div>
+
+            {/* Enforcement override */}
+            <div className="space-y-2">
+              <Label>Enforcement</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Override the global enforcement level for just this station</p>
+              <div className="grid grid-cols-3 gap-2">
+                {ENFORCEMENT_OVERRIDES.map(({ value, label }) => (
+                  <button
+                    key={label}
+                    onClick={() => setEnforcementOverride(value)}
+                    className={`py-2 rounded-xl text-sm font-medium transition-colors ${
+                      enforcementOverride === value
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary/30 text-foreground hover:bg-secondary/50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Energy modes */}
