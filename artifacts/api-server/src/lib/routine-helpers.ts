@@ -127,7 +127,7 @@ async function reconcileTodaySessions(tx: any, routine: { id: number; date: stri
   // roller and hygiene feel "skipped" this morning even though nothing
   // was ever actually resolved for them.
   const checkpointIdsWithLiveSessions = new Set(
-    existingSessions.filter((s) => s.status !== "cancelled").map((s) => s.checkpointId),
+    existingSessions.filter((s: any) => s.status !== "cancelled").map((s: any) => s.checkpointId),
   );
 
   // Add sessions for newly-eligible checkpoints (including ones whose only
