@@ -56,13 +56,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // still owns all the actual scan-reaction UI (Bed Station dialog, alarm
   // dismissal, etc); this effect only ever starts/stops the physical
   // reader itself.
+  //
+  // Re-asserted on every route change (except while the NFC Tags screen
+  // itself is open) rather than once on mount: nfc-tags.tsx registers a
+  // *new* tag by calling nfcService.startScanning() directly with its own
+  // one-shot callback — it has to, registration needs a different
+  // response to a scan than the normal app flow — but that call silently
+  // takes over the single shared reader session and, on close, only stops
+  // it, never hands it back. Left as a one-time effect, that permanently
+  // orphaned the app-wide listener the moment anyone ever opened NFC Tags:
+  // every scan after that got no listener at all and fell through to
+  // Android's own "No supported application for this NFC Tag" toast, even
+  // for a tag that was perfectly valid and already registered. Re-running
+  // this on every navigation away from that screen means the reader always
+  // gets handed back, instead of staying lost for the rest of the session.
   useEffect(() => {
     if (!nfcService.isNative()) return;
+    if (location === "/nfc-tags") return;
     nfcService.startScanning(dispatchScan);
     return () => {
       nfcService.stopScanning();
     };
-  }, []);
+  }, [location]);
 
   // Keep the screen on for the whole time a checkpoint is in progress —
   // Karen reported the phone sleeping mid-task. Dynamically imported so a
