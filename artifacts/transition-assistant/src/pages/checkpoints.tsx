@@ -10,11 +10,45 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Clock, ChevronRight, GripVertical, X, Plus, Trash2, SmartphoneNfc, Check, Circle } from "lucide-react";
 import { toast } from "sonner";
-import { LucideIcon } from "./checkpoint-icon";
+import { LucideIcon, ICON_OPTIONS } from "./checkpoint-icon";
 import { Button } from "@/components/ui/button";
 
 // Minute presets
 const MINUTE_PRESETS = [0, 5, 10, 15, 20, 25, 30, 45, 60];
+
+// Curated accent palette — flat, minimalistic tones. `null` means "use the
+// app's default theme color" (the existing bg-primary/10 treatment).
+const COLOR_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null, label: "Default" },
+  { value: "#f43f5e", label: "Rose" },
+  { value: "#f97316", label: "Orange" },
+  { value: "#f59e0b", label: "Amber" },
+  { value: "#10b981", label: "Emerald" },
+  { value: "#14b8a6", label: "Teal" },
+  { value: "#0ea5e9", label: "Sky" },
+  { value: "#6366f1", label: "Indigo" },
+  { value: "#8b5cf6", label: "Violet" },
+  { value: "#ec4899", label: "Pink" },
+];
+
+// Tailwind can't compile classes for colors chosen at runtime, so a custom
+// color falls back to an inline style (a translucent tint of the color as
+// background, the color itself as the icon/text color); no custom color
+// keeps using the original theme-aware Tailwind classes exactly as before.
+function iconBadgeStyle(cp: any, isDragged?: boolean) {
+  if (cp.color) {
+    return {
+      className: "w-11 h-11 rounded-xl flex items-center justify-center shrink-0",
+      style: { backgroundColor: `${cp.color}1A`, color: cp.color },
+    };
+  }
+  return {
+    className: `w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+      cp.isActive || isDragged ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+    }`,
+    style: undefined,
+  };
+}
 
 // Day-of-week picker, 0=Sunday..6=Saturday — mirrors settings-alarm.tsx's DAYS.
 const DAYS = [
@@ -274,7 +308,7 @@ function CheckpointsLoaded({
               className="flex-1 flex items-center gap-4 px-4 py-4 text-left active:scale-[0.98] transition-all min-w-0"
               onClick={() => setEditing(cp)}
             >
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${cp.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+              <div className={iconBadgeStyle(cp).className} style={iconBadgeStyle(cp).style}>
                 <LucideIcon name={cp.icon} size={22} strokeWidth={1.5} />
               </div>
               <div className="flex-1 min-w-0">
@@ -289,6 +323,13 @@ function CheckpointsLoaded({
                 </p>
               </div>
               <ChevronRight size={18} className="text-muted-foreground/50 shrink-0" />
+            </button>
+            <button
+              aria-label={`Delete ${cp.name}`}
+              onClick={() => handleDelete(cp.id)}
+              className="flex items-center justify-center px-1.5 text-muted-foreground/50 hover:text-destructive active:scale-90 transition-all shrink-0"
+            >
+              <Trash2 size={17} />
             </button>
             <button
               aria-label="Drag to reorder"
@@ -338,6 +379,7 @@ function EditSheet({
   const [isRepeatable, setIsRepeatable] = useState<boolean>(checkpoint?.isRepeatable ?? true);
   const [isActive, setIsActive] = useState<boolean>(checkpoint?.isActive ?? true);
   const [icon, setIcon] = useState(checkpoint?.icon ?? "MapPin");
+  const [color, setColor] = useState<string | null>(checkpoint?.color ?? null);
   const [type, setType] = useState<string>(checkpoint?.type ?? "standard");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(checkpoint?.daysOfWeek ?? []);
 
@@ -361,6 +403,7 @@ function EditSheet({
       isRepeatable,
       isActive,
       icon,
+      color,
       type,
       daysOfWeek,
       energyModes: checkpoint?.energyModes ?? ["full", "reduced", "survival"],
@@ -379,8 +422,11 @@ function EditSheet({
         {/* title row */}
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <LucideIcon name={icon} size={20} className="text-primary" strokeWidth={1.5} />
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center ${color ? "" : "bg-primary/10"}`}
+              style={color ? { backgroundColor: `${color}1A` } : undefined}
+            >
+              <LucideIcon name={icon} size={20} className={color ? "" : "text-primary"} style={color ? { color } : undefined} strokeWidth={1.5} />
             </div>
             <div>
               <p className="font-bold text-lg leading-tight">{checkpoint ? "Edit Station" : "New Station"}</p>
@@ -458,6 +504,56 @@ function EditSheet({
                         <span className="text-[10px] font-bold uppercase tracking-tight">{t.label}</span>
                     </button>
                 ))}
+            </div>
+          </div>
+
+          {/* Icon */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Icon</label>
+            <div className="grid grid-cols-6 gap-2">
+              {ICON_OPTIONS.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => setIcon(name)}
+                  aria-label={name}
+                  className={`aspect-square rounded-2xl border flex items-center justify-center transition-all ${
+                    icon === name
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/40 bg-card"
+                  }`}
+                  style={icon === name && color ? { backgroundColor: `${color}1A`, borderColor: color } : undefined}
+                >
+                  <LucideIcon
+                    name={name}
+                    size={19}
+                    strokeWidth={1.5}
+                    className={icon === name ? (color ? "" : "text-primary") : "text-muted-foreground"}
+                    style={icon === name && color ? { color } : undefined}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Color */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Color</label>
+            <div className="flex flex-wrap gap-3">
+              {COLOR_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => setColor(opt.value)}
+                  aria-label={opt.label}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    opt.value ? "" : "bg-muted"
+                  } ${color === opt.value ? "ring-2 ring-offset-2 ring-offset-background ring-primary/60 scale-110" : ""}`}
+                  style={opt.value ? { backgroundColor: opt.value } : undefined}
+                >
+                  {color === opt.value && (
+                    <Check size={14} className={opt.value ? "text-white" : "text-muted-foreground"} strokeWidth={3} />
+                  )}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -6,6 +6,10 @@ export const checkpointsTable = pgTable("checkpoints", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon").notNull().default("MapPin"),
+  // Optional custom accent color (hex string, e.g. "#8b5cf6"). Null means
+  // "use the app's default theme color" — this is purely cosmetic/
+  // personalization, never load-bearing logic.
+  color: text("color"),
   description: text("description"),
   location: text("location"),
   order: serial("order").notNull(),

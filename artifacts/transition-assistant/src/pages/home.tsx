@@ -1262,9 +1262,18 @@ function WaitingView({ session, freezeThresholdSeconds, enforcementLevel, onTapS
 
       {/* main content */}
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-        {/* icon */}
-        <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mb-6">
-          <LucideIcon name={session.checkpointIcon} size={40} className="text-primary" strokeWidth={1.5} />
+        {/* icon — custom station color if Karen set one on the Stations screen, falls back to theme primary */}
+        <div
+          className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 ${session.checkpointColor ? "" : "bg-primary/10"}`}
+          style={session.checkpointColor ? { backgroundColor: `${session.checkpointColor}1A` } : undefined}
+        >
+          <LucideIcon
+            name={session.checkpointIcon}
+            size={40}
+            className={session.checkpointColor ? "" : "text-primary"}
+            style={session.checkpointColor ? { color: session.checkpointColor } : undefined}
+            strokeWidth={1.5}
+          />
         </div>
 
         {/* station name — very large */}
@@ -1625,8 +1634,17 @@ function InProgressView({
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-          <LucideIcon name={session.checkpointIcon} size={32} className="text-primary" strokeWidth={1.5} />
+        <div
+          className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-5 ${session.checkpointColor ? "" : "bg-primary/10"}`}
+          style={session.checkpointColor ? { backgroundColor: `${session.checkpointColor}1A` } : undefined}
+        >
+          <LucideIcon
+            name={session.checkpointIcon}
+            size={32}
+            className={session.checkpointColor ? "" : "text-primary"}
+            style={session.checkpointColor ? { color: session.checkpointColor } : undefined}
+            strokeWidth={1.5}
+          />
         </div>
 
         {isWorkingFromBed && (

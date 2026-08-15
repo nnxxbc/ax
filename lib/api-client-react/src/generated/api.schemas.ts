@@ -26,6 +26,8 @@ export interface Checkpoint {
   name: string;
   icon: string;
   /** @nullable */
+  color?: string | null;
+  /** @nullable */
   description?: string | null;
   /** @nullable */
   location: string | null;
@@ -52,6 +54,8 @@ export interface Checkpoint {
 export interface CheckpointInput {
   name: string;
   icon: string;
+  /** @nullable */
+  color?: string | null;
   description?: string;
   location?: string;
   order: number;
@@ -72,6 +76,8 @@ export interface CheckpointInput {
 export interface CheckpointUpdate {
   name?: string;
   icon?: string;
+  /** @nullable */
+  color?: string | null;
   description?: string;
   location?: string;
   order?: number;

@@ -177,6 +177,7 @@ export async function enrichSession(session: {
     ...session,
     checkpointName: cp?.name ?? "Unknown",
     checkpointIcon: cp?.icon ?? "MapPin",
+    checkpointColor: cp?.color ?? null,
     checkpointLocation: cp?.location ?? null,
     checkpointDefaultDurationMinutes: cp?.defaultDurationMinutes ?? 0,
     checkpointMinDurationMinutes: cp?.minDurationMinutes ?? 0,
