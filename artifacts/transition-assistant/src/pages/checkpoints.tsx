@@ -1,4 +1,5 @@
-import { useState } from "react";
+import * as React from "react";
+import { useState, useRef } from "react";
 import {
   useListCheckpoints,
   useUpdateCheckpoint,
@@ -7,7 +8,7 @@ import {
   getListCheckpointsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Clock, ChevronRight, ChevronUp, ChevronDown, X, Plus, Trash2, SmartphoneNfc, Check, Circle } from "lucide-react";
+import { Loader2, Clock, ChevronRight, GripVertical, X, Plus, Trash2, SmartphoneNfc, Check, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { LucideIcon } from "./checkpoint-icon";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,43 @@ export function Checkpoints() {
     );
   }
 
+  return <CheckpointsLoaded
+    checkpoints={Array.isArray(checkpoints) ? checkpoints : []}
+    editing={editing}
+    setEditing={setEditing}
+    isAdding={isAdding}
+    setIsAdding={setIsAdding}
+    createCheckpoint={createCheckpoint}
+    updateCheckpoint={updateCheckpoint}
+    deleteCheckpoint={deleteCheckpoint}
+    queryClient={queryClient}
+  />;
+}
+
+// Split out once loading is confirmed done, so hooks below (drag state, refs)
+// never run before `checkpoints` actually has data — keeps the drag math
+// (which reads real row heights on mount) from ever operating on an empty list.
+function CheckpointsLoaded({
+  checkpoints,
+  editing,
+  setEditing,
+  isAdding,
+  setIsAdding,
+  createCheckpoint,
+  updateCheckpoint,
+  deleteCheckpoint,
+  queryClient,
+}: {
+  checkpoints: any[];
+  editing: any | null;
+  setEditing: (v: any | null) => void;
+  isAdding: boolean;
+  setIsAdding: (v: boolean) => void;
+  createCheckpoint: ReturnType<typeof useCreateCheckpoint>;
+  updateCheckpoint: ReturnType<typeof useUpdateCheckpoint>;
+  deleteCheckpoint: ReturnType<typeof useDeleteCheckpoint>;
+  queryClient: ReturnType<typeof useQueryClient>;
+}) {
   const sorted = [...(Array.isArray(checkpoints) ? checkpoints : [])].sort((a, b) => a.order - b.order);
 
   const handleSave = (id: number | null, data: any) => {
@@ -119,24 +157,69 @@ export function Checkpoints() {
     );
   };
 
-  const handleReorder = (id: number, direction: "up" | "down") => {
-    const idx = sorted.findIndex((c) => c.id === id);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
-    const a = sorted[idx];
-    const b = sorted[swapIdx];
-    if (a.order === b.order) return;
-    updateCheckpoint.mutate(
-      { id: a.id, data: { order: b.order } },
-      { onError: () => toast.error("Failed to reorder") }
-    );
-    updateCheckpoint.mutate(
-      { id: b.id, data: { order: a.order } },
-      {
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: getListCheckpointsQueryKey() }),
-        onError: () => toast.error("Failed to reorder"),
+  // ── Drag-to-reorder ──────────────────────────────────────────────────────
+  // Deliberately not using a library here — this is a plain pointer-events
+  // implementation so it works the same in the web preview and the Android
+  // WebView with zero new native dependencies. DOM order stays fixed at
+  // whatever it was when the drag started (`drag.snapshot`); everything
+  // else — the dragged row following the finger, other rows sliding out of
+  // the way — is done with CSS transforms computed from `drag`, so nothing
+  // actually reflows (and therefore nothing jumps) until the drag ends and
+  // the real order is committed.
+  const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const [drag, setDrag] = useState<{
+    id: number;
+    startY: number;
+    deltaY: number;
+    targetIdx: number;
+    snapshot: typeof sorted;
+    rowHeight: number;
+  } | null>(null);
+
+  const handleDragStart = (e: React.PointerEvent, cp: any) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const snapshot = sorted;
+    const idx = snapshot.findIndex((c) => c.id === cp.id);
+    const rowHeight = rowRefs.current[cp.id]?.getBoundingClientRect().height || 76;
+    setDrag({ id: cp.id, startY: e.clientY, deltaY: 0, targetIdx: idx, snapshot, rowHeight });
+  };
+
+  const handleDragMove = (e: React.PointerEvent) => {
+    setDrag((d) => {
+      if (!d) return d;
+      const deltaY = e.clientY - d.startY;
+      const originalIdx = d.snapshot.findIndex((c) => c.id === d.id);
+      const shiftSlots = Math.round(deltaY / d.rowHeight);
+      const targetIdx = Math.max(0, Math.min(d.snapshot.length - 1, originalIdx + shiftSlots));
+      return { ...d, deltaY, targetIdx };
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDrag((d) => {
+      if (!d) return null;
+      const originalIdx = d.snapshot.findIndex((c) => c.id === d.id);
+      if (d.targetIdx !== originalIdx) {
+        const next = [...d.snapshot];
+        const [item] = next.splice(originalIdx, 1);
+        next.splice(d.targetIdx, 0, item);
+        let anyChanged = false;
+        next.forEach((cp, idx) => {
+          const newOrder = idx + 1;
+          if (cp.order !== newOrder) {
+            anyChanged = true;
+            updateCheckpoint.mutate(
+              { id: cp.id, data: { order: newOrder } },
+              { onError: () => toast.error("Failed to reorder") }
+            );
+          }
+        });
+        if (anyChanged) {
+          setTimeout(() => queryClient.invalidateQueries({ queryKey: getListCheckpointsQueryKey() }), 300);
+        }
       }
-    );
+      return null;
+    });
   };
 
   return (
@@ -154,12 +237,36 @@ export function Checkpoints() {
       </div>
 
       <div className="flex flex-col gap-2 px-4">
-        {sorted.map((cp, idx) => {
+        {(drag ? drag.snapshot : sorted).map((cp, idx) => {
           const dayLabel = formatDaysOfWeek(cp.daysOfWeek);
+          const isDragged = drag?.id === cp.id;
+
+          // Other rows slide out of the dragged item's way by exactly one
+          // slot when it's currently past their position, purely via
+          // transform — DOM order (and therefore everyone's key/identity)
+          // stays put until drop, so nothing reflows mid-drag.
+          let shiftY = 0;
+          if (drag && !isDragged) {
+            const originalIdx = drag.snapshot.findIndex((c) => c.id === drag.id);
+            if (originalIdx < drag.targetIdx && idx > originalIdx && idx <= drag.targetIdx) {
+              shiftY = -drag.rowHeight;
+            } else if (originalIdx > drag.targetIdx && idx >= drag.targetIdx && idx < originalIdx) {
+              shiftY = drag.rowHeight;
+            }
+          }
+
           return (
           <div
             key={cp.id}
-            className={`w-full flex items-stretch gap-2 bg-card border rounded-2xl pr-2 shadow-sm transition-all ${
+            ref={(el) => { rowRefs.current[cp.id] = el; }}
+            style={{
+              transform: `translateY(${isDragged ? drag!.deltaY : shiftY}px)`,
+              transition: isDragged ? "none" : "transform 150ms ease",
+              position: isDragged ? "relative" : "static",
+              zIndex: isDragged ? 50 : "auto",
+            }}
+            className={`w-full flex items-stretch gap-2 bg-card border rounded-2xl pr-2 shadow-sm ${
+                isDragged ? "shadow-xl scale-[1.02] border-primary/40" :
                 cp.isActive ? "border-border/40 hover:border-primary/30" : "opacity-60 border-dashed border-border/60 grayscale"
             }`}
           >
@@ -183,24 +290,16 @@ export function Checkpoints() {
               </div>
               <ChevronRight size={18} className="text-muted-foreground/50 shrink-0" />
             </button>
-            <div className="flex flex-col justify-center gap-0.5 shrink-0">
-              <button
-                aria-label="Move up"
-                disabled={idx === 0}
-                onClick={() => handleReorder(cp.id, "up")}
-                className="p-1 rounded-lg text-muted-foreground disabled:opacity-20 hover:bg-muted active:scale-95"
-              >
-                <ChevronUp size={16} />
-              </button>
-              <button
-                aria-label="Move down"
-                disabled={idx === sorted.length - 1}
-                onClick={() => handleReorder(cp.id, "down")}
-                className="p-1 rounded-lg text-muted-foreground disabled:opacity-20 hover:bg-muted active:scale-95"
-              >
-                <ChevronDown size={16} />
-              </button>
-            </div>
+            <button
+              aria-label="Drag to reorder"
+              onPointerDown={(e) => handleDragStart(e, cp)}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+              onPointerCancel={handleDragEnd}
+              className="flex items-center justify-center px-2 touch-none select-none text-muted-foreground/60 cursor-grab active:cursor-grabbing active:text-primary shrink-0"
+            >
+              <GripVertical size={18} />
+            </button>
           </div>
           );
         })}
@@ -330,6 +429,12 @@ function EditSheet({
                 active={isRepeatable}
                 onClick={() => setIsRepeatable(!isRepeatable)}
                 description="Can be done multiple times"
+             />
+             <ToggleButton
+                label="Active"
+                active={isActive}
+                onClick={() => setIsActive(!isActive)}
+                description={isActive ? "Shows up in your routine" : "Paused — hidden, but tag & history stay"}
              />
           </div>
 
