@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { db, checkpointsTable, checkpointSessionsTable, dailyRoutinesTable, settingsTable } from "@workspace/db";
 import { isScheduledForDay, dayOfWeekFromDateString, sortSessionsByCheckpointOrder } from "./schedule-helpers";
 
@@ -29,38 +29,55 @@ export async function getOrCreateSettings() {
 
 export async function getOrCreateTodayRoutine() {
   const today = getTodayDateString();
-  const existing = await db
-    .select()
-    .from(dailyRoutinesTable)
-    .where(eq(dailyRoutinesTable.date, today))
-    .orderBy(desc(dailyRoutinesTable.id));
 
-  // If there's an active routine, use it — but first bring its sessions in
-  // line with whatever the checkpoints look like *right now*. Karen can
-  // reorder stations or change a checkpoint's days at any time via the
-  // Stations screen, including mid-day after today's routine already
-  // exists; without this, those edits would silently only take effect
-  // tomorrow.
-  const active = existing.find(r => r.status === "active");
-  if (active) {
-    await reconcileTodaySessions(active);
-    return active;
-  }
+  // Everything below runs inside one transaction, gated by a Postgres
+  // advisory lock keyed on today's date string. Without this, two requests
+  // landing at nearly the same instant (e.g. several screens each fetching
+  // "today's routine" right when the app cold-starts) can both read "no
+  // waiting session for checkpoint X yet" before either has written
+  // anything, and both insert one — that's exactly what produced a
+  // duplicate session for almost every checkpoint the first time a routine
+  // got created after the day-boundary fix shipped. The lock is
+  // per-transaction (pg_advisory_xact_lock), so it's released automatically
+  // on commit/rollback and only ever makes a concurrent call *wait its
+  // turn*, never fail — the second call simply re-reads state after the
+  // first one committed and correctly sees the sessions already exist.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${today}))`);
 
-  // If the latest routine is completed, we'll create a new one below.
-  // Unless we want to keep using the completed one for repetitions?
-  // The requirement says "begin a new cycle".
+    const existing = await tx
+      .select()
+      .from(dailyRoutinesTable)
+      .where(eq(dailyRoutinesTable.date, today))
+      .orderBy(desc(dailyRoutinesTable.id));
 
-  const settings = await getOrCreateSettings();
-  const energyMode = settings.defaultEnergyMode;
-  const [routine] = await db
-    .insert(dailyRoutinesTable)
-    .values({ date: today, energyMode, status: "active", createdAt: new Date().toISOString() })
-    .returning();
+    // If there's an active routine, use it — but first bring its sessions in
+    // line with whatever the checkpoints look like *right now*. Karen can
+    // reorder stations or change a checkpoint's days at any time via the
+    // Stations screen, including mid-day after today's routine already
+    // exists; without this, those edits would silently only take effect
+    // tomorrow.
+    const active = existing.find(r => r.status === "active");
+    if (active) {
+      await reconcileTodaySessions(tx, active);
+      return active;
+    }
 
-  await reconcileTodaySessions(routine);
+    // If the latest routine is completed, we'll create a new one below.
+    // Unless we want to keep using the completed one for repetitions?
+    // The requirement says "begin a new cycle".
 
-  return routine;
+    const settings = await getOrCreateSettings();
+    const energyMode = settings.defaultEnergyMode;
+    const [routine] = await tx
+      .insert(dailyRoutinesTable)
+      .values({ date: today, energyMode, status: "active", createdAt: new Date().toISOString() })
+      .returning();
+
+    await reconcileTodaySessions(tx, routine);
+
+    return routine;
+  });
 }
 
 /**
@@ -80,22 +97,22 @@ export async function getOrCreateTodayRoutine() {
  * always sorts by the checkpoint's current order at read time, so reorders
  * show up immediately without needing to touch stored session rows at all.
  */
-async function reconcileTodaySessions(routine: { id: number; date: string; energyMode: string }) {
-  const checkpoints = await db.select().from(checkpointsTable).where(eq(checkpointsTable.isActive, true));
+async function reconcileTodaySessions(tx: any, routine: { id: number; date: string; energyMode: string }) {
+  const checkpoints = await tx.select().from(checkpointsTable).where(eq(checkpointsTable.isActive, true));
   const todayDayOfWeek = dayOfWeekFromDateString(routine.date);
 
   const eligibleCheckpointIds = new Set(
     checkpoints
-      .filter((cp) => {
+      .filter((cp: any) => {
         const modes: string[] = JSON.parse(cp.energyModes);
         if (!modes.includes(routine.energyMode)) return false;
         const days: number[] = JSON.parse(cp.daysOfWeek ?? "[]");
         return isScheduledForDay(days, todayDayOfWeek);
       })
-      .map((cp) => cp.id),
+      .map((cp: any) => cp.id),
   );
 
-  const existingSessions = await db
+  const existingSessions = await tx
     .select()
     .from(checkpointSessionsTable)
     .where(eq(checkpointSessionsTable.routineId, routine.id));
@@ -117,7 +134,7 @@ async function reconcileTodaySessions(routine: { id: number; date: string; energ
   // prior session today was cancelled).
   for (const cp of checkpoints) {
     if (!eligibleCheckpointIds.has(cp.id) || checkpointIdsWithLiveSessions.has(cp.id)) continue;
-    await db.insert(checkpointSessionsTable).values({
+    await tx.insert(checkpointSessionsTable).values({
       routineId: routine.id,
       checkpointId: cp.id,
       status: "waiting",
@@ -132,7 +149,7 @@ async function reconcileTodaySessions(routine: { id: number; date: string; energ
   for (const session of existingSessions) {
     if (session.status !== "waiting") continue;
     if (eligibleCheckpointIds.has(session.checkpointId)) continue;
-    await db.delete(checkpointSessionsTable).where(eq(checkpointSessionsTable.id, session.id));
+    await tx.delete(checkpointSessionsTable).where(eq(checkpointSessionsTable.id, session.id));
   }
 }
 
