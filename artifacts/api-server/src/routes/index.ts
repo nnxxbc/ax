@@ -12,6 +12,7 @@ import debugRouter from "./debug";
 import syncRouter from "./sync";
 import thoughtsRouter from "./thoughts";
 import frozenRouter from "./frozen";
+import morningCheckinsRouter from "./morning-checkins";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(debugRouter);
 router.use(syncRouter);
 router.use(thoughtsRouter);
 router.use(frozenRouter);
+router.use(morningCheckinsRouter);
 
 export default router;

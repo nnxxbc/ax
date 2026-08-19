@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, eventLogTable } from "@workspace/db";
 import { processNfcScan } from "../lib/nfc-scan-processor";
 import { logEvent } from "../lib/event-logger";
+import { recordMorningCheckin } from "./morning-checkins";
 
 const router = Router();
 
@@ -65,6 +66,18 @@ router.post("/sync/events", async (req, res): Promise<void> => {
         await logEvent(req, `sync_${result.action}`, `Synced: ${result.message ?? result.action}`, {
           checkpointId,
           sessionId: result.sessionId ?? null,
+          details: JSON.stringify({ occurredAt: evt.occurredAt, replay: true }),
+          clientEventId,
+        });
+
+        results.push({ clientEventId, ok: true });
+        continue;
+      }
+
+      if (evt.type === "morning_checkin") {
+        const row = await recordMorningCheckin(evt.payload ?? {});
+
+        await logEvent(req, "morning_checkin_synced", `Morning check-in synced: ${row?.status ?? "unknown"}`, {
           details: JSON.stringify({ occurredAt: evt.occurredAt, replay: true }),
           clientEventId,
         });

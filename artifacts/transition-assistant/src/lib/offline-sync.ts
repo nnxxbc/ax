@@ -12,6 +12,7 @@ import { customFetch } from "@workspace/api-client-react";
 import { getJSON, setJSON } from "./local-store.ts";
 import type { LocalSession, LocalCheckpoint } from "./nfc-state-machine.ts";
 import { enqueue, flushQueue, type EventSender, type SyncEvent } from "./sync-queue.ts";
+import type { SubmitMorningCheckinInput } from "./morning-checkin-api.ts";
 
 const SESSIONS_CACHE_KEY = "cached_sessions";
 const CHECKPOINTS_CACHE_KEY = "cached_checkpoints";
@@ -178,6 +179,25 @@ export function queueCheckpointScan(checkpointId: number, sessionId: string, act
 export function queueEmergencyUnlock(reason: string | null) {
   const event = enqueue("emergency_unlock", { occurredAt: new Date().toISOString(), payload: { reason } });
   flushSyncQueue().catch((err) => console.error("[offline-sync] Immediate flush after unlock failed:", err));
+  return event;
+}
+
+// Morning Check-In — goes through the same durable queue as everything else
+// here rather than a direct fetch, deliberately. This is exactly the moment
+// (right after waking up, phone not yet on wifi) offline is most likely, and
+// losing a day's check-in silently would leave a gap in the pattern data
+// the feature exists to build up. Payload-only (no checkpointId/sessionId),
+// same shape as queueEmergencyUnlock.
+export function queueMorningCheckin(payload: SubmitMorningCheckinInput) {
+  // Cast at this single choke point: SubmitMorningCheckinInput is a named
+  // interface (no index signature), so TS won't structurally assign it to
+  // enqueue()'s Record<string, unknown> payload field without an explicit
+  // cast, even though every property is a valid value for that shape.
+  const event = enqueue("morning_checkin", {
+    occurredAt: new Date().toISOString(),
+    payload: payload as unknown as Record<string, unknown>,
+  });
+  flushSyncQueue().catch((err) => console.error("[offline-sync] Immediate flush after morning check-in failed:", err));
   return event;
 }
 

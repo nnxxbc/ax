@@ -164,5 +164,30 @@ await test("Multiple independent checkpoints: a failure on one does not block sy
   assert.equal(pendingCount(), 1); // checkpoint 1's event remains, checkpoint 2's is done
 });
 
+await test("Abandon after max attempts: a permanently-failing event stops counting as pending and stops retrying", async () => {
+  (globalThis as any).window.localStorage.clear();
+  const evt = enqueue("checkpoint_scan", { checkpointId: 1, occurredAt: new Date().toISOString() });
+
+  let calls = 0;
+  for (let i = 0; i < 8; i++) {
+    // Back-date so each retry is past its backoff window.
+    const queue = getQueue();
+    queue[0].createdAt = new Date(Date.now() - 60_000).toISOString();
+    (globalThis as any).window.localStorage.setItem("ta_v1_sync_queue", JSON.stringify(queue));
+    await flushQueue(async () => { calls++; return { ok: false, error: "HTTP 500" }; });
+  }
+
+  assert.equal(calls, 8);
+  const stillThere = getQueue().find((e) => e.id === evt.id);
+  assert.ok(stillThere, "abandoned event must stay in the queue for diagnostics, not be deleted");
+  assert.equal(stillThere!.syncStatus, "abandoned");
+  assert.equal(pendingCount(), 0, "an abandoned event must stop holding the 'syncing' banner open");
+
+  // A further flush must not attempt it again.
+  const r = await flushQueue(async () => { calls++; return { ok: true }; });
+  assert.equal(calls, 8, "abandoned events must never be retried again");
+  assert.equal(r.synced, 0);
+});
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed > 0) process.exit(1);

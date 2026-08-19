@@ -26,7 +26,19 @@ export type SyncEventType =
   | "checkpoint_scan"
   | "session_cancel"
   | "timer_extend"
-  | "emergency_unlock";
+  | "emergency_unlock"
+  | "morning_checkin";
+
+// An event that keeps failing forever (e.g. the server permanently rejects
+// it for a reason no amount of retrying fixes) used to stay "failed"
+// indefinitely, which — since pendingCount() counted anything not yet
+// "synced" — meant the "Saved on this device. Syncing with server…" banner
+// on Home never went away, even though nothing was actually going to
+// change no matter how long it waited. After MAX_SYNC_ATTEMPTS, an event
+// is marked "abandoned" instead: it stops being retried and stops holding
+// the banner open, but — unlike deleting it — stays in the queue so
+// getLastSyncError()/dev.tsx can still show what actually happened.
+export const MAX_SYNC_ATTEMPTS = 8;
 
 export interface SyncEvent {
   id: string; // clientEventId — unique, generated on enqueue
@@ -35,7 +47,7 @@ export interface SyncEvent {
   sessionId: string | null;
   occurredAt: string; // ISO — device-authoritative timestamp of the real-world action
   payload: Record<string, unknown>;
-  syncStatus: "pending" | "synced" | "failed";
+  syncStatus: "pending" | "synced" | "failed" | "abandoned";
   attempts: number;
   lastError: string | null;
   createdAt: string;
@@ -78,7 +90,7 @@ export function enqueue(
 }
 
 export function pendingCount(): number {
-  return getQueue().filter((e) => e.syncStatus !== "synced").length;
+  return getQueue().filter((e) => e.syncStatus !== "synced" && e.syncStatus !== "abandoned").length;
 }
 
 export function getLastSuccessfulSync(): string | null {
@@ -117,7 +129,7 @@ export async function flushQueue(send: EventSender): Promise<{ synced: number; f
     const now = Date.now();
 
     for (const event of queue) {
-      if (event.syncStatus === "synced") continue;
+      if (event.syncStatus === "synced" || event.syncStatus === "abandoned") continue;
 
       const readyAt = event.lastError ? new Date(event.createdAt).getTime() + backoffMs(event.attempts) : 0;
       // Simple readiness check: skip events still in their backoff window,
@@ -136,7 +148,7 @@ export async function flushQueue(send: EventSender): Promise<{ synced: number; f
           synced++;
           setJSON(LAST_SYNC_KEY, new Date().toISOString());
         } else {
-          event.syncStatus = "failed";
+          event.syncStatus = event.attempts >= MAX_SYNC_ATTEMPTS ? "abandoned" : "failed";
           event.lastError = result.error ?? "Unknown sync error";
           setJSON(LAST_ERROR_KEY, event.lastError);
           failed++;
@@ -145,7 +157,7 @@ export async function flushQueue(send: EventSender): Promise<{ synced: number; f
         }
       } catch (err: any) {
         event.attempts += 1;
-        event.syncStatus = "failed";
+        event.syncStatus = event.attempts >= MAX_SYNC_ATTEMPTS ? "abandoned" : "failed";
         event.lastError = err?.message || "Network failure";
         setJSON(LAST_ERROR_KEY, event.lastError);
         failed++;

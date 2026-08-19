@@ -30,6 +30,8 @@ import { getJSON, setJSON } from "@/lib/local-store";
 import { effectiveEnforcementLevel } from "@/lib/enforcement";
 import { useStartFrozenEvent, useAppendFrozenStep, useCompleteFrozenEvent } from "@/lib/frozen-api";
 import { useCreateThought } from "@/lib/thoughts-api";
+import { useTodayMorningCheckin } from "@/lib/morning-checkin-api";
+import { MorningCheckInScreen } from "./morning-checkin";
 import { advanceFrozenStage } from "@/lib/frozen-protocol-rules";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -504,6 +506,21 @@ export function Home() {
   const [earlyWarningDialog, setEarlyWarningDialog] = useState<any>(null);
   const [bedModeDialog, setBedModeDialog] = useState<any>(null);
 
+  // Morning Check-In — shown once per morning, right after "Out of Bed"
+  // completes (see the "completed" case in applyLocalResult below), before
+  // Foam Roller / Stretch. Gated locally via the same date-flag pattern as
+  // alarm dismissal (dateKey / morning_checkin_done_date), and confirmed
+  // idempotent server-side too (routes/morning-checkins.ts), so this can
+  // never show twice or record a duplicate for the same day even across
+  // an app restart or reinstall.
+  const [showMorningCheckIn, setShowMorningCheckIn] = useState(false);
+  const { data: todayMorningCheckin } = useTodayMorningCheckin();
+  useEffect(() => {
+    if (todayMorningCheckin) {
+      setJSON("morning_checkin_done_date", dateKey(new Date()));
+    }
+  }, [todayMorningCheckin]);
+
   // Phase 3, Features 7/8 — Frozen Protocol event tracking. Lifted to Home
   // (rather than owned by the leaf InProgressView) because Home is already
   // the single place session completions are handled (see the "completed"
@@ -584,6 +601,16 @@ export function Home() {
             setFrozenEventId(null);
             setFrozenStage(1);
             setFrozenDestinationId(null);
+          }
+          // Morning Check-In trigger — matched by name (same convention as
+          // isSubMinuteCapable() in checkpoints.tsx) rather than a dedicated
+          // checkpoint type, since "Out of Bed" is a checkpoint Karen built
+          // herself, not a built-in one. Once per calendar day.
+          if (
+            /out of bed/i.test(result.session.checkpointName ?? "") &&
+            getJSON<string | null>("morning_checkin_done_date", null) !== dateKey(new Date())
+          ) {
+            setShowMorningCheckIn(true);
           }
           break;
         case "early_complete_warning":
@@ -757,6 +784,22 @@ export function Home() {
         <p className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground mb-3">Complete</p>
         <h2 className="text-3xl font-bold tracking-tight">{completedName}</h2>
       </div>
+    );
+  }
+
+  // Morning Check-In — takes over the content area between "Out of Bed"
+  // completing and Foam Roller / Stretch appearing. Placed after the
+  // completion flash above (so "Out of Bed" still finishes exactly as it
+  // always has) and before everything else, so it fully pre-empts the
+  // normal in-progress/waiting views underneath.
+  if (showMorningCheckIn) {
+    return (
+      <MorningCheckInScreen
+        onDone={() => {
+          setJSON("morning_checkin_done_date", dateKey(new Date()));
+          setShowMorningCheckIn(false);
+        }}
+      />
     );
   }
 

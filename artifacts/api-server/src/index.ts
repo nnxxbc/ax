@@ -88,6 +88,25 @@ async function runMigrations() {
         recovery_duration_seconds INTEGER,
         created_at TEXT NOT NULL DEFAULT 'now()'
       );`,
+
+      // morning_checkins — new table (Morning Check-In, inserted between the
+      // "Out of Bed" and "Foam Roller / Stretch" checkpoints). One row per
+      // calendar day, enforced by the UNIQUE constraint below.
+      `CREATE TABLE IF NOT EXISTS morning_checkins (
+        id SERIAL PRIMARY KEY,
+        date TEXT NOT NULL,
+        selected_events TEXT NOT NULL DEFAULT '[]',
+        other_text TEXT,
+        impact_score INTEGER,
+        everything_is_good BOOLEAN NOT NULL DEFAULT FALSE,
+        status TEXT NOT NULL DEFAULT 'completed',
+        created_at TEXT NOT NULL DEFAULT 'now()'
+      );`,
+      "DO $$ BEGIN " +
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'morning_checkins_date_unique') THEN " +
+        "ALTER TABLE morning_checkins ADD CONSTRAINT morning_checkins_date_unique UNIQUE (date); " +
+        "END IF; " +
+      "END $$;",
     ];
 
     for (const cmd of migrationCommands) {
