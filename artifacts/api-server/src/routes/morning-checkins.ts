@@ -32,18 +32,19 @@ router.get("/morning-checkins/today", async (_req, res): Promise<void> => {
 });
 
 /**
- * Idempotent create — one check-in per morning. Shared by the direct POST
- * route below and the offline sync replay handler (routes/sync.ts), the
- * same way processNfcScan() is shared between live and replayed scans.
- * If today's check-in is already recorded (a retried request, a queued
- * event replayed twice, or the screen somehow got triggered twice), the
- * existing row is returned rather than erroring or duplicating it.
+ * Upsert — one row per morning, but Karen can register a check-in more
+ * than once a day (she forgot, wants to redo it, or things changed later
+ * in the morning) — a later submission UPDATES today's row instead of
+ * being silently dropped, so opening the check-in again actually does
+ * something. Shared by the direct POST route below and the offline sync
+ * replay handler (routes/sync.ts), the same way processNfcScan() is
+ * shared between live and replayed scans. Retry-safety for the *same*
+ * queued event is handled a layer up in routes/sync.ts (clientEventId /
+ * event_log dedup) before this ever runs — this function only decides
+ * insert-vs-update for today's date.
  */
 export async function recordMorningCheckin(body: any) {
   const today = getTodayDateString();
-
-  const [existing] = await db.select().from(morningCheckinsTable).where(eq(morningCheckinsTable.date, today));
-  if (existing) return existing;
 
   const status = body?.status === "skipped" ? "skipped" : "completed";
   const everythingIsGood = status === "completed" && !!body?.everythingIsGood;
@@ -66,24 +67,39 @@ export async function recordMorningCheckin(body: any) {
     if (Number.isInteger(n) && n >= 0 && n <= 5) impactScore = n;
   }
 
+  const values = {
+    selectedEvents: JSON.stringify(selectedEvents),
+    otherText,
+    impactScore,
+    everythingIsGood,
+    status,
+  };
+
+  const [existing] = await db.select().from(morningCheckinsTable).where(eq(morningCheckinsTable.date, today));
+
+  if (existing) {
+    const [row] = await db
+      .update(morningCheckinsTable)
+      .set(values)
+      .where(eq(morningCheckinsTable.id, existing.id))
+      .returning();
+    return row;
+  }
+
   try {
     const [row] = await db
       .insert(morningCheckinsTable)
-      .values({
-        date: today,
-        selectedEvents: JSON.stringify(selectedEvents),
-        otherText,
-        impactScore,
-        everythingIsGood,
-        status,
-        createdAt: new Date().toISOString(),
-      })
+      .values({ date: today, ...values, createdAt: new Date().toISOString() })
       .returning();
     return row;
   } catch (err: any) {
-    // Concurrent request already inserted today's row — treat as success.
+    // Concurrent request already inserted today's row — update it instead.
     if (err?.code === "23505") {
-      const [row] = await db.select().from(morningCheckinsTable).where(eq(morningCheckinsTable.date, today));
+      const [row] = await db
+        .update(morningCheckinsTable)
+        .set(values)
+        .where(eq(morningCheckinsTable.date, today))
+        .returning();
       return row;
     }
     throw err;
@@ -92,7 +108,7 @@ export async function recordMorningCheckin(body: any) {
 
 router.post("/morning-checkins", async (req, res): Promise<void> => {
   const row = await recordMorningCheckin(req.body);
-  res.status(201).json(row);
+  res.json(row);
 });
 
 export default router;

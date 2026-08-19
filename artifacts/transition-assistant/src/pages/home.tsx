@@ -64,6 +64,27 @@ function statusIcon(status: string) {
   }
 }
 
+// A manual, always-available entry point into the Morning Check-In —
+// Karen wants to be able to open it any time, not only right after
+// scanning Out of Bed (e.g. she forgot, or wants to log a change later in
+// the morning). Placed as a small floating button rather than a nav item
+// so it doesn't compete with the primary routine flow; opening it again
+// after already checking in today just updates today's entry (see
+// recordMorningCheckin's upsert behavior server-side) rather than being a
+// no-op.
+function MorningCheckInFab({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Open Morning Check-In"
+      title="Morning Check-In"
+      className="absolute top-20 right-4 z-30 w-10 h-10 rounded-full bg-card border border-border/50 shadow-sm flex items-center justify-center active:scale-90 transition-all"
+    >
+      <span className="text-lg leading-none">☀️</span>
+    </button>
+  );
+}
+
 // ─── Compact routine overview ─────────────────────────────────────────────────
 
 function RoutineOverview({ sessions }: { sessions: any[] }) {
@@ -807,6 +828,7 @@ export function Home() {
   if (!routine || routine.status === "abandoned") {
     return (
       <div className="flex-1 flex flex-col relative">
+        <MorningCheckInFab onClick={() => setShowMorningCheckIn(true)} />
         {lastApiError && (
           <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
             <p className="text-xs font-bold uppercase tracking-wider mb-1">Local Error</p>
@@ -827,7 +849,8 @@ export function Home() {
   // Routine completed
   if (routine.status === "completed") {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative">
+        <MorningCheckInFab onClick={() => setShowMorningCheckIn(true)} />
         <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mb-6">
           <CheckCircle2 size={48} className="text-primary" strokeWidth={1.5} />
         </div>
@@ -852,6 +875,7 @@ export function Home() {
 
   return (
     <div className="flex-1 flex flex-col relative">
+      <MorningCheckInFab onClick={() => setShowMorningCheckIn(true)} />
       {lastApiError && (
         <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-xl shadow-lg animate-in slide-in-from-top-2">
           <p className="text-xs font-bold uppercase tracking-wider mb-1">Local Error</p>
